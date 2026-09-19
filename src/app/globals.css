@@ -1,26 +1,500 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ============================================================
+   BlockLens design system — "the instrument plate"
+
+   Identity comes from the surface ramp and typography, not from
+   an accent hue: warm graphite surfaces lit by a cold pale
+   instrument light. Structure is carried by hairlines and
+   registration marks rather than by cards.
+
+   Colour values are validated, not eyeballed — the plot ramp
+   clears CVD separation and contrast gates against --color-ground,
+   and every ink level clears WCAG AA text contrast on ground and
+   panel. Re-validate before changing any value here.
+   ============================================================ */
+
+@theme {
+  /* --- Surfaces: warm graphite, five tonal layers ------------ */
+  --color-ground: #100e0c;
+  --color-ground-deep: #0a0908;
+  --color-panel: #191714;
+  --color-panel-raised: #211e1a;
+  --color-panel-sunken: #0c0b09;
+
+  /* --- Hairlines: the primary structural device -------------- */
+  --color-line-faint: #1e1b17;
+  --color-line: #2a2621;
+  --color-line-strong: #3b352d;
+
+  /* --- Ink: four steps, every one AA text on every surface ---
+     Measured against ground, panel, panel-raised and panel-sunken —
+     the faintest step still clears 4.5:1, so tertiary metadata is
+     readable rather than merely decorative. */
+  --color-ink: #f2ede5;
+  --color-ink-dim: #bab2a7;
+  --color-ink-faint: #a49b91;
+  --color-ink-ghost: #948c83;
+
+  /* --- Signal: instrument light, used as light not as colour - */
+  --color-signal: #bfd4ee;
+  --color-signal-soft: #8fb3dc;
+  --color-signal-deep: #6f9ccb;
+
+  /* --- Semantics: text/delta steps (AA on ground and panel) -- */
+  --color-up: #3fbf63;
+  --color-down: #e0605f;
+  --color-caution: #fab219;
+
+  /* --- Semantics: chart marks (3:1 UI contrast, saturated) --- */
+  --color-up-mark: #0ca30c;
+  --color-down-mark: #d03b3b;
+
+  /* --- Plot: categorical, fixed order, never cycled ---------- */
+  --color-plot-1: #3987e5;
+  --color-plot-2: #d95926;
+  --color-plot-3: #199e70;
+  --color-plot-4: #c98500;
+  --color-plot-5: #d55181;
+  --color-plot-6: #9085e9;
+
+  /* --- Type ------------------------------------------------- */
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-newsreader), ui-serif, Georgia, serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+
+  /* --- Radius: deliberately sharp ---------------------------- */
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+
+  /* --- Motion: calm, one family of easings ------------------ */
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out-soft: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* --- Depth: light rather than drop shadow ----------------- */
+  --shadow-lift: inset 0 1px 0 0 rgb(255 255 255 / 0.04),
+    0 12px 32px -12px rgb(0 0 0 / 0.7);
+  --shadow-float: inset 0 1px 0 0 rgb(255 255 255 / 0.05),
+    0 24px 64px -16px rgb(0 0 0 / 0.85);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+/* ============================================================
+   Base
+   ============================================================ */
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  * {
+    border-color: var(--color-line);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-ground);
+    color: var(--color-ink);
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background-color: color-mix(in oklab, var(--color-signal) 28%, transparent);
+    color: var(--color-ink);
+  }
+
+  /* One focus treatment across the product: a signal hairline,
+     never a thick glowing halo. */
+  :focus-visible {
+    outline: 1px solid var(--color-signal);
+    outline-offset: 2px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-line-strong);
+    border: 3px solid var(--color-ground);
+    border-radius: 6px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-ink-ghost);
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* ============================================================
+   Typography — a rhythm, not a mechanical size ladder.
+   Each class is a role. Numerals never wear the display serif.
+   ============================================================ */
+
+@layer components {
+  /* Editorial display: the loudest voice. Serif, tight, large. */
+  .t-display {
+    font-family: var(--font-display);
+    font-weight: 400;
+    /* The floor is set for a 375px viewport: the hero breaks its
+       headline manually, so a larger minimum would push the longest
+       line past the gutter instead of wrapping. */
+    font-size: clamp(2.25rem, 7.5vw, 6rem);
+    line-height: 0.94;
+    letter-spacing: -0.028em;
+    text-wrap: balance;
+  }
+
+  .t-display-sm {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: clamp(2rem, 4.2vw, 3.25rem);
+    line-height: 1.02;
+    letter-spacing: -0.022em;
+    text-wrap: balance;
+  }
+
+  /* Section voice: serif, quieter, still editorial. */
+  .t-editorial {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: clamp(1.5rem, 2.4vw, 2rem);
+    line-height: 1.12;
+    letter-spacing: -0.015em;
+  }
+
+  /* An emphasised phrase inside display text. */
+  .t-accent {
+    font-style: italic;
+    color: var(--color-signal);
+  }
+
+  /* Reading voice for introductions. */
+  .t-lede {
+    font-size: clamp(1rem, 1.35vw, 1.1875rem);
+    line-height: 1.6;
+    letter-spacing: -0.008em;
+    color: var(--color-ink-dim);
+  }
+
+  .t-body {
+    font-size: 0.9375rem;
+    line-height: 1.65;
+    color: var(--color-ink-dim);
+  }
+
+  .t-body-sm {
+    font-size: 0.8125rem;
+    line-height: 1.6;
+    color: var(--color-ink-dim);
+  }
+
+  /* The structural label. Mono is used for *labels*, not only
+     numbers — this is what makes the interface read technical. */
+  .t-micro {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    line-height: 1.2;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-ink-faint);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .t-micro-tight {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    line-height: 1.2;
+    letter-spacing: 0.02em;
+    color: var(--color-ink-faint);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Figures. Tabular in columns; proportional at hero scale. */
+  .t-figure {
+    font-family: var(--font-mono);
+    font-weight: 500;
+    font-size: 0.9375rem;
+    letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-ink);
+  }
+
+  .t-figure-lg {
+    font-family: var(--font-mono);
+    font-weight: 500;
+    font-size: clamp(1.375rem, 2.2vw, 1.875rem);
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-ink);
+  }
+
+  /* The single number a view leads with. */
+  .t-figure-hero {
+    font-family: var(--font-mono);
+    font-weight: 500;
+    font-size: clamp(2.25rem, 5vw, 3.75rem);
+    line-height: 1;
+    letter-spacing: -0.045em;
+    font-variant-numeric: lining-nums;
+    color: var(--color-ink);
+  }
+}
+
+/* ============================================================
+   Structure — the devices that replace cards
+   ============================================================ */
+
+@layer components {
+  /* The measurement field: the visual metaphor, at the threshold
+     of perception. Fades out so it never boxes content in. */
+  .field-grid {
+    background-image:
+      linear-gradient(to right, var(--color-line-faint) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--color-line-faint) 1px, transparent 1px);
+    background-size: 88px 88px;
+    background-position: center center;
+  }
+
+  .field-fade {
+    mask-image: radial-gradient(
+      ellipse 80% 60% at 50% 40%,
+      #000 20%,
+      transparent 78%
+    );
+  }
+
+  /* A second, finer grid. Two scales at different opacities read as
+     depth without any 3D — the near grid is tighter and fainter. */
+  .field-grid-fine {
+    background-image:
+      linear-gradient(to right, var(--color-line-faint) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--color-line-faint) 1px, transparent 1px);
+    background-size: 22px 22px;
+    background-position: center center;
+  }
+
+  /* A softer, off-centre fade for backdrops, so the grid dissolves
+     rather than stopping at an edge. */
+  .field-fade-soft {
+    mask-image: radial-gradient(
+      ellipse 70% 70% at 62% 34%,
+      #000 0%,
+      rgb(0 0 0 / 0.55) 42%,
+      transparent 76%
+    );
+  }
+
+  /* The atmospheric light the backdrop is built around: one broad,
+     low-contrast source, off-axis so the composition is not symmetric. */
+  .backdrop-light {
+    background:
+      radial-gradient(
+        ellipse 55% 45% at 68% 18%,
+        color-mix(in oklab, var(--color-signal) 9%, transparent) 0%,
+        transparent 68%
+      ),
+      radial-gradient(
+        ellipse 45% 40% at 20% 72%,
+        color-mix(in oklab, var(--color-signal-deep) 5%, transparent) 0%,
+        transparent 70%
+      );
+  }
+
+  /* Atmospheric light rather than a glow. */
+  .aura {
+    background: radial-gradient(
+      ellipse 60% 50% at 50% 0%,
+      color-mix(in oklab, var(--color-signal) 8%, transparent) 0%,
+      transparent 70%
+    );
+  }
+
+  /* Registration brackets: corner ticks instead of a full border.
+     Encloses without making a box. */
+  .bracket {
+    position: relative;
+  }
+  .bracket::before,
+  .bracket::after {
+    content: '';
+    position: absolute;
+    width: 9px;
+    height: 9px;
+    pointer-events: none;
+    border-color: var(--color-line-strong);
+  }
+  .bracket::before {
+    top: 0;
+    left: 0;
+    border-top: 1px solid;
+    border-left: 1px solid;
+  }
+  .bracket::after {
+    bottom: 0;
+    right: 0;
+    border-bottom: 1px solid;
+    border-right: 1px solid;
+  }
+
+  /* A readout row set: aligned figures divided by hairlines.
+     This is the default way to present data in BlockLens. */
+  .register > * + * {
+    border-top: 1px solid var(--color-line-faint);
+  }
+
+  /* Tick marks along a rule — reads as a measurement scale. */
+  .tick-rule {
+    background-image: repeating-linear-gradient(
+      to right,
+      var(--color-line-strong) 0 1px,
+      transparent 1px 8px
+    );
+  }
+
+  /* Hairlines that fade at both ends, for open layouts. */
+  .rule-v-fade {
+    background: linear-gradient(
+      to bottom,
+      transparent,
+      var(--color-line) 15%,
+      var(--color-line) 85%,
+      transparent
+    );
+  }
+
+  .rule-h-fade {
+    background: linear-gradient(
+      to right,
+      transparent,
+      var(--color-line) 12%,
+      var(--color-line) 88%,
+      transparent
+    );
+  }
+}
+
+/* ============================================================
+   Motion — calm and purposeful, fully surrendered under
+   prefers-reduced-motion.
+   ============================================================ */
+
+@layer components {
+  @keyframes bl-rise {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 10px, 0);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes bl-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes bl-sweep {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(100%);
+    }
+  }
+
+  @keyframes bl-scan {
+    0%,
+    100% {
+      opacity: 0.25;
+    }
+    50% {
+      opacity: 0.6;
+    }
+  }
+
+  .anim-rise {
+    animation: bl-rise 0.55s var(--ease-out-quint) both;
+  }
+
+  .anim-fade {
+    animation: bl-fade 0.4s var(--ease-out-quint) both;
+  }
+
+  /* Loading: a single light pass over the shape the content will
+     occupy — not a spinner, not a grey block. */
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    background-color: var(--color-line-faint);
+  }
+  .skeleton::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in oklab, var(--color-ink) 5%, transparent),
+      transparent
+    );
+    animation: bl-sweep 1.6s var(--ease-in-out-soft) infinite;
+  }
+
+  .anim-scan {
+    animation: bl-scan 2.4s var(--ease-in-out-soft) infinite;
+  }
+
+  /* The only ambient motion in the product: a 48-second drift of the
+     backdrop light. Transform and opacity only, so it stays on the
+     compositor and costs no layout. Under prefers-reduced-motion the
+     global override below stops it outright, and the backdrop is
+     designed to look finished standing still. */
+  @keyframes bl-drift {
+    from {
+      transform: translate3d(-1.5%, -1%, 0) scale(1.02);
+      opacity: 0.75;
+    }
+    to {
+      transform: translate3d(1.5%, 1%, 0) scale(1.06);
+      opacity: 1;
+    }
+  }
+
+  .anim-drift {
+    animation: bl-drift 48s var(--ease-in-out-soft) infinite alternate;
+    will-change: transform, opacity;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .skeleton::after {
+    animation: none;
+    opacity: 0;
+  }
 }
