@@ -206,15 +206,37 @@ export interface VestingEvent {
 // News types
 // ============================================================
 
+/**
+ * A normalised article.
+ *
+ * Both providers are flattened into this one shape, so nothing in the
+ * UI knows whether a story arrived over RSS or from GNews.
+ *
+ * BlockLens holds metadata and the provider's own excerpt only — never a
+ * copy of the article body. `url` is where the piece actually lives.
+ */
 export interface NewsArticle {
+  /** Provider-prefixed identity, e.g. `rss:https://…`. */
   id: string;
+  /** Stable, URL-safe route segment. Unique per source URL. */
+  slug: string;
   title: string;
+  /** The provider's excerpt. Not the article body. */
   summary: string;
   source: string;
+  /** Canonical link to the original article. */
   url: string;
   publishedAt: string;
-  image?: string;
+  imageUrl?: string;
+  /**
+   * Normalised subject areas, derived from the categories the source
+   * itself filed the article under. Absent when the source filed none.
+   */
+  topics?: string[];
+  /** The source's own raw labels, shown as provenance. */
+  tags?: string[];
   sentiment?: 'positive' | 'negative' | 'neutral';
+  /** Tickers mentioned in the headline or excerpt. */
   relatedTokens?: string[];
 }
 

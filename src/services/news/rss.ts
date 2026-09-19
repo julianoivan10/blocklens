@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { fetchText, settleAll } from '../http';
+import { articleSlug, inferTokens, normaliseTopics, titleKey } from './normalise';
 import type { NewsArticle } from '@/types';
 
 /**
@@ -8,8 +9,8 @@ import type { NewsArticle } from '@/types';
  *
  * Feeds are parsed with targeted regular expressions rather than a DOM
  * parser: the shapes consumed here are a fixed, known set, and this
- * avoids shipping an XML dependency into the server bundle for six
- * feeds. Anything unparseable is dropped rather than guessed at.
+ * avoids shipping an XML dependency to serve five feeds. Anything
+ * unparseable is dropped rather than guessed at.
  *
  * Both RSS 2.0 (`<item>`) and Atom (`<entry>`) are handled, since crypto
  * project blogs commonly publish Atom.
@@ -46,6 +47,7 @@ function decode(value: string): string {
     .replace(/&#8220;|&ldquo;/g, '“')
     .replace(/&#8221;|&rdquo;/g, '”')
     .replace(/&#8212;|&mdash;/g, '—')
+    .replace(/&#8230;|&hellip;/g, '…')
     .replace(/&amp;/g, '&')
     .replace(/\s+/g, ' ')
     .trim();
@@ -58,38 +60,63 @@ function tag(block: string, name: string): string | undefined {
 
 /** Atom puts the URL in an attribute rather than in the element body. */
 function atomLink(block: string): string | undefined {
-  const alternate = block.match(
-    /<link[^>]*rel=["']alternate["'][^>]*href=["']([^"']+)["']/i
-  );
+  const alternate = block.match(/<link[^>]*rel=["']alternate["'][^>]*href=["']([^"']+)["']/i);
   if (alternate) return alternate[1];
-  const plain = block.match(/<link[^>]*href=["']([^"']+)["']/i);
-  return plain?.[1];
+  return block.match(/<link[^>]*href=["']([^"']+)["']/i)?.[1];
 }
 
-function truncate(text: string, max = 260): string {
+/**
+ * The lead image.
+ *
+ * The five feeds use four different conventions between them — CoinDesk
+ * `media:content`, Decrypt and The Defiant `media:thumbnail`, the
+ * Ethereum Foundation `enclosure`, Cointelegraph any of them plus an
+ * inline `<img>`. All are checked, in that order of reliability.
+ */
+function extractImage(block: string): string | undefined {
+  const patterns = [
+    /<media:content[^>]*url=["']([^"']+)["'][^>]*medium=["']image["']/i,
+    /<media:content[^>]*medium=["']image["'][^>]*url=["']([^"']+)["']/i,
+    /<media:content[^>]*url=["']([^"']+\.(?:jpg|jpeg|png|webp|avif)[^"']*)["']/i,
+    /<media:thumbnail[^>]*url=["']([^"']+)["']/i,
+    /<enclosure[^>]*url=["']([^"']+)["'][^>]*type=["']image\//i,
+    /<enclosure[^>]*type=["']image\/[^"']*["'][^>]*url=["']([^"']+)["']/i,
+    /<img[^>]+src=["']([^"']+)["']/i,
+  ];
+
+  for (const pattern of patterns) {
+    const found = block.match(pattern)?.[1];
+    if (!found) continue;
+
+    const url = decode(found);
+    // Only https: an http image would be blocked as mixed content, and a
+    // data URI in a feed is not a real lead image.
+    if (/^https:\/\//i.test(url)) return url;
+  }
+  return undefined;
+}
+
+/** Every `<category>` the item declares, including CDATA and attributes. */
+function extractCategories(block: string): string[] {
+  const values: string[] = [];
+
+  for (const match of block.matchAll(/<category[^>]*>([\s\S]*?)<\/category>/gi)) {
+    const value = decode(match[1]);
+    if (value) values.push(value);
+  }
+  // Atom writes the label in an attribute instead.
+  for (const match of block.matchAll(/<category[^>]*term=["']([^"']+)["']/gi)) {
+    values.push(decode(match[1]));
+  }
+
+  return values;
+}
+
+function truncate(text: string, max = 280): string {
   if (text.length <= max) return text;
   const clipped = text.slice(0, max);
   const stop = clipped.lastIndexOf('. ');
   return stop > max * 0.5 ? clipped.slice(0, stop + 1) : `${clipped.trim()}…`;
-}
-
-/** Tickers mentioned in the headline, used to attach articles to assets. */
-const TICKER_HINTS: Array<[RegExp, string]> = [
-  [/\bbitcoin\b|\bbtc\b/i, 'BTC'],
-  [/\bethereum\b|\beth\b|\bether\b/i, 'ETH'],
-  [/\bsolana\b|\bsol\b/i, 'SOL'],
-  [/\bcardano\b|\bada\b/i, 'ADA'],
-  [/\bavalanche\b|\bavax\b/i, 'AVAX'],
-  [/\bchainlink\b|\blink\b/i, 'LINK'],
-  [/\bripple\b|\bxrp\b/i, 'XRP'],
-  [/\bdogecoin\b|\bdoge\b/i, 'DOGE'],
-  [/\bpolygon\b|\bmatic\b/i, 'MATIC'],
-  [/\buniswap\b|\buni\b/i, 'UNI'],
-  [/\barbitrum\b|\barb\b/i, 'ARB'],
-];
-
-export function inferTokens(text: string): string[] {
-  return TICKER_HINTS.filter(([pattern]) => pattern.test(text)).map(([, ticker]) => ticker);
 }
 
 function parseFeed(xml: string, feed: Feed): NewsArticle[] {
@@ -108,7 +135,10 @@ function parseFeed(xml: string, feed: Feed): NewsArticle[] {
     if (!link || !/^https?:\/\//.test(link)) continue;
 
     const published =
-      tag(block, 'pubDate') || tag(block, 'published') || tag(block, 'updated') || tag(block, 'dc:date');
+      tag(block, 'pubDate') ||
+      tag(block, 'published') ||
+      tag(block, 'updated') ||
+      tag(block, 'dc:date');
     const timestamp = published ? Date.parse(published) : NaN;
     // An article without a usable date cannot be ordered, so it is
     // dropped rather than given "now".
@@ -117,14 +147,22 @@ function parseFeed(xml: string, feed: Feed): NewsArticle[] {
     const body =
       tag(block, 'description') || tag(block, 'summary') || tag(block, 'content') || '';
 
+    const { topics, tags } = normaliseTopics(extractCategories(block));
+
     articles.push({
       id: `rss:${link}`,
+      slug: articleSlug(title, link),
       title,
       summary: truncate(body) || title,
       source: feed.source,
       url: link,
       publishedAt: new Date(timestamp).toISOString(),
-      relatedTokens: [...new Set([...(feed.tokens ?? []), ...inferTokens(`${title} ${body}`)])],
+      imageUrl: extractImage(block),
+      topics: topics.length > 0 ? topics : undefined,
+      tags: tags.length > 0 ? tags : undefined,
+      relatedTokens: [
+        ...new Set([...(feed.tokens ?? []), ...inferTokens(`${title} ${body}`)]),
+      ],
     });
   }
 
@@ -152,7 +190,7 @@ export class RssNewsProvider {
       .filter((article) => {
         // Syndicated stories appear in several feeds; key on the
         // normalised headline so the reader sees each story once.
-        const key = article.title.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+        const key = titleKey(article.title);
         if (seen.has(key)) return false;
         seen.add(key);
         return true;

@@ -1,8 +1,11 @@
 import type { NewsService } from './interface';
 import type { NewsArticle } from '@/types';
 import { sleep } from '@/lib/utils';
+import { articleSlug } from './normalise';
 
-const MOCK_NEWS: NewsArticle[] = [
+/* Slugs are added below rather than written out by hand, so they are
+   derived by the same function the live providers use. */
+const MOCK_NEWS: Omit<NewsArticle, 'slug'>[] = [
   {
     id: 'n1',
     title: 'Bitcoin ETF inflows reach record high as institutional adoption accelerates',
@@ -85,14 +88,23 @@ const MOCK_NEWS: NewsArticle[] = [
   },
 ];
 
+/**
+ * Sample articles carry slugs derived exactly as live ones are, so the
+ * article route behaves identically in sample mode.
+ */
+const WITH_SLUGS: NewsArticle[] = MOCK_NEWS.map((article) => ({
+  ...article,
+  slug: articleSlug(article.title, article.url),
+}));
+
 export class MockNewsService implements NewsService {
   async getLatest(limit = 10): Promise<NewsArticle[]> {
     await sleep(250);
-    return MOCK_NEWS.slice(0, limit);
+    return WITH_SLUGS.slice(0, limit);
   }
 
   async getByToken(symbol: string, limit = 5): Promise<NewsArticle[]> {
     await sleep(250);
-    return MOCK_NEWS.filter(n => n.relatedTokens?.includes(symbol.toUpperCase())).slice(0, limit);
+    return WITH_SLUGS.filter((n) => n.relatedTokens?.includes(symbol.toUpperCase())).slice(0, limit);
   }
 }

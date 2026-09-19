@@ -1,23 +1,57 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getMarketService } from '@/services/market';
-import type { ApiResponse, SearchResult } from '@/types';
+import { searchNews } from '@/server/data/news';
+import type { ApiResponse, NewsArticle, SearchResult } from '@/types';
 
-export async function GET(request: NextRequest): Promise<NextResponse<ApiResponse<SearchResult[]>>> {
-  try {
-    const q = request.nextUrl.searchParams.get('q');
-    if (!q || q.trim().length === 0) {
-      return NextResponse.json({ success: true, data: [] });
-    }
+/**
+ * Global search.
+ *
+ * One endpoint for both things a researcher looks for — an asset, or a
+ * story — so the command palette stays the single way into everything
+ * rather than growing a second, unrelated news search.
+ *
+ * The two lookups are independent: assets still resolve if the news
+ * window is unavailable, and vice versa.
+ */
+export interface SearchPayload {
+  assets: SearchResult[];
+  articles: Array<Pick<NewsArticle, 'slug' | 'title' | 'source' | 'publishedAt'>>;
+}
 
-    const service = getMarketService();
-    const results = await service.searchTokens(q.trim());
+export async function GET(
+  request: NextRequest
+): Promise<NextResponse<ApiResponse<SearchPayload>>> {
+  const query = request.nextUrl.searchParams.get('q')?.trim();
 
-    return NextResponse.json({ success: true, data: results });
-  } catch (error) {
-    console.error('Search error:', error);
-    return NextResponse.json(
-      { success: false, error: 'Search failed' },
-      { status: 500 }
-    );
+  if (!query) {
+    return NextResponse.json({ success: true, data: { assets: [], articles: [] } });
   }
+
+  const [assets, articles] = await Promise.all([
+    getMarketService()
+      .searchTokens(query)
+      .catch((error) => {
+        console.error('Search: asset lookup failed:', error);
+        return [] as SearchResult[];
+      }),
+    searchNews(query, 4).catch((error) => {
+      console.error('Search: news lookup failed:', error);
+      return [] as NewsArticle[];
+    }),
+  ]);
+
+  return NextResponse.json({
+    success: true,
+    data: {
+      assets,
+      // Only what the palette renders — the whole article would be
+      // needless payload on every keystroke.
+      articles: articles.map(({ slug, title, source, publishedAt }) => ({
+        slug,
+        title,
+        source,
+        publishedAt,
+      })),
+    },
+  });
 }

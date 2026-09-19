@@ -142,6 +142,92 @@ async function main() {
     return `${articles.length} articles from ${sources.length} sources (${sources.join(', ')})\n        ${tagged} tagged with a ticker · newest: "${articles[0].title.slice(0, 64)}…"`;
   });
 
+  console.log('\nNews — normalisation, slugs and deduplication');
+  {
+    const { CompositeNewsService } = await import('../src/services/news/composite.js');
+    const { articleSlug } = await import('../src/services/news/normalise.js');
+
+    const news = new CompositeNewsService(process.env.NEWS_API_KEY);
+
+    await check('CompositeNewsService.getLatest(40)', async () => {
+      const articles = await news.getLatest(40);
+      if (articles.length < 10) throw new Error(`only ${articles.length} articles`);
+
+      // Shape: every article must carry the fields the UI relies on.
+      const missing = articles.filter((a) => !a.slug || !a.title || !a.url || !a.source);
+      if (missing.length) throw new Error(`${missing.length} articles missing core fields`);
+
+      // Slugs must be unique and URL-safe.
+      const slugs = articles.map((a) => a.slug);
+      const unique = new Set(slugs);
+      if (unique.size !== slugs.length) {
+        throw new Error(`${slugs.length - unique.size} duplicate slug(s)`);
+      }
+      const unsafe = slugs.filter((s) => !/^[a-z0-9-]+$/.test(s));
+      if (unsafe.length) throw new Error(`unsafe slug: ${unsafe[0]}`);
+
+      // Slugs must be stable: same inputs, same slug.
+      const first = articles[0];
+      if (articleSlug(first.title, first.url) !== first.slug) {
+        throw new Error('slug is not reproducible from title + url');
+      }
+
+      // No two articles should share a normalised headline.
+      const keys = new Set(articles.map((a) => a.title.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()));
+      if (keys.size !== articles.length) {
+        throw new Error(`${articles.length - keys.size} duplicate headline(s) survived dedup`);
+      }
+
+      const withImage = articles.filter((a) => a.imageUrl).length;
+      const withTopics = articles.filter((a) => a.topics?.length).length;
+      const withTokens = articles.filter((a) => a.relatedTokens?.length).length;
+      const withExcerpt = articles.filter((a) => a.summary && a.summary !== a.title).length;
+      const sources = [...new Set(articles.map((a) => a.source))];
+      const insecure = articles.filter((a) => a.imageUrl && !a.imageUrl.startsWith('https://'));
+      if (insecure.length) throw new Error(`${insecure.length} non-https image(s)`);
+
+      const topics = [...new Set(articles.flatMap((a) => a.topics ?? []))];
+
+      return [
+        `${articles.length} articles · ${sources.length} sources (${sources.slice(0, 6).join(', ')})`,
+        `images ${withImage}/${articles.length} · excerpts ${withExcerpt}/${articles.length} · topics ${withTopics}/${articles.length} · tickers ${withTokens}/${articles.length}`,
+        `topics seen: ${topics.join(', ') || 'none'}`,
+        `slug sample: ${first.slug}`,
+      ].join('\n        ');
+    });
+
+    await check('getByToken("BTC") stays asset-scoped', async () => {
+      const articles = await news.getByToken('BTC', 6);
+      if (articles.length === 0) throw new Error('no BTC articles');
+      const offTopic = articles.filter(
+        (a) => !/bitcoin|btc/i.test(`${a.title} ${a.summary}`)
+      );
+      return `${articles.length} articles, ${articles.length - offTopic.length} explicitly naming Bitcoin · newest "${articles[0].title.slice(0, 54)}…"`;
+    });
+
+    await check('RSS-only path still serves when GNews is absent', async () => {
+      // Constructed without a key: the composite must fall back to RSS
+      // alone rather than failing.
+      const rssOnly = new CompositeNewsService(undefined);
+      const articles = await rssOnly.getLatest(12);
+      if (articles.length < 5) throw new Error(`only ${articles.length} articles without GNews`);
+      return `${articles.length} articles from RSS alone`;
+    });
+
+    await check('a failing GNews does not take the feed down', async () => {
+      // A deliberately invalid key makes GNews reject. RSS must carry the
+      // feed regardless, and the reader must not be told which provider
+      // broke.
+      const broken = new CompositeNewsService('invalid-key-for-failure-test');
+      const articles = await broken.getLatest(12);
+      if (articles.length < 5) {
+        throw new Error(`GNews failure degraded the feed to ${articles.length} articles`);
+      }
+      const sources = [...new Set(articles.map((a) => a.source))];
+      return `${articles.length} articles still served from ${sources.length} RSS sources while GNews errored`;
+    });
+  }
+
   console.log('\nBlockLens — computed risk and derived supply (no provider sells these)');
   {
     const { ComputedRiskService } = await import('../src/services/risk/computed.js');

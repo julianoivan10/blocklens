@@ -72,9 +72,12 @@ export async function WatchlistPanel({ limit }: { limit?: number }) {
         />
       ) : (
         <AssetList className="-ml-4">
-          {items.map((item) => (
+          {/* Ordinals here too, so this column's rows share the exact
+              structure of Movers and Trending beside it. */}
+          {items.map((item, i) => (
             <AssetRow
               key={item.id}
+              index={i + 1}
               symbol={item.symbol}
               name={item.name}
               price={item.currentPrice}

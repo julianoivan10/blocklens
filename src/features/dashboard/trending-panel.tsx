@@ -32,10 +32,13 @@ export async function TrendingPanel() {
         <p className="t-micro-tight py-8 text-ink-ghost">Nothing trending right now</p>
       ) : (
         <AssetList className="-ml-4">
-          {trending.slice(0, 6).map((token) => (
+          {/* List position, not market-cap rank: the ordinal slot is two
+              characters wide, and a rank in the hundreds both overflows it
+              and reads as a position it is not. */}
+          {trending.slice(0, 6).map((token, i) => (
             <AssetRow
               key={token.id}
-              index={token.rank}
+              index={i + 1}
               symbol={token.symbol}
               name={token.name}
               change={token.priceChangePercentage24h}

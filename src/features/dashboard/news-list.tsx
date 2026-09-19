@@ -1,69 +1,65 @@
-import { Block, BlockHead } from '@/components/ui/block';
-import { StatusDot } from '@/components/data/delta';
-import { getLatestNews } from '@/server/data/news';
-import { formatTimeAgo } from '@/lib/format';
-import type { NewsArticle } from '@/types';
-
-const SENTIMENT = {
-  positive: { tone: 'up' as const, label: 'Positive' },
-  negative: { tone: 'down' as const, label: 'Negative' },
-  neutral: { tone: 'neutral' as const, label: 'Neutral' },
-};
+import Link from 'next/link';
+import { ArrowRight } from 'lucide-react';
+import { Block, BlockHead, EmptyState, ErrorState } from '@/components/ui/block';
+import { ROUTES } from '@/lib/constants';
+import { isOk } from '@/services/result';
+import { getNewsFeedResult } from '@/server/data/news';
+import { ArticleRow } from '@/features/news/article-row';
 
 /**
- * The news register.
+ * The news register on the workspace overview.
  *
- * Editorial rows divided by hairlines: headline in reading type,
- * source and timing in mono metadata, sentiment stated in words beside
- * its dot. Previously each item lived inside a card with a tinted
- * sentiment pill.
+ * Uses the same row component as the News page, so a story looks and
+ * behaves identically wherever it appears — and clicking it lands on the
+ * BlockLens article page rather than jumping straight out to the
+ * publisher.
  */
-export async function NewsList({ limit = 6, label = 'Latest' }: { limit?: number; label?: string }) {
-  const news = await getLatestNews(limit);
+export async function NewsList({ limit = 5, label = 'Latest' }: { limit?: number; label?: string }) {
+  const result = await getNewsFeedResult();
+
+  if (!isOk(result)) {
+    return (
+      <Block>
+        <BlockHead label={label} />
+        <ErrorState
+          className="mt-6"
+          title="News is temporarily unavailable."
+          description="No news source responded. The rest of this page is unaffected."
+        />
+      </Block>
+    );
+  }
+
+  const articles = result.data.slice(0, limit);
 
   return (
     <Block>
       <BlockHead
         label={label}
-        aside={<span className="t-micro-tight text-ink-ghost">RSS and GNews</span>}
+        aside={
+          <Link
+            href={ROUTES.news}
+            className="group inline-flex items-center gap-1.5 text-ink-faint transition-colors hover:text-ink"
+          >
+            <span className="t-micro-tight">All news</span>
+            <ArrowRight className="size-3 transition-transform duration-300 ease-out-quint group-hover:translate-x-0.5" />
+          </Link>
+        }
       />
 
-      {news.length === 0 ? (
-        <p className="t-micro-tight py-8 text-ink-ghost">No articles available</p>
+      {articles.length === 0 ? (
+        <EmptyState
+          className="mt-6"
+          title="No recent news available."
+          description="The configured sources returned no stories for this window."
+        />
       ) : (
-        <ul className="flex flex-col">
-          {news.map((article) => (
-            <NewsRow key={article.id} article={article} />
+        <ul className="-ml-4 flex flex-col">
+          {articles.map((article) => (
+            <ArticleRow key={article.id} article={article} />
           ))}
         </ul>
       )}
     </Block>
-  );
-}
-
-export function NewsRow({ article }: { article: NewsArticle }) {
-  const sentiment = article.sentiment ? SENTIMENT[article.sentiment] : null;
-
-  return (
-    <li className="group border-b border-line-faint last:border-b-0">
-      <article className="flex flex-col gap-3 py-5 lg:flex-row lg:items-baseline lg:gap-10">
-        <div className="flex min-w-0 flex-1 flex-col gap-2">
-          <h3 className="max-w-[46rem] text-[0.9375rem] font-medium leading-snug text-ink">
-            {article.title}
-          </h3>
-          <p className="line-clamp-2 max-w-[46rem] text-[0.8125rem] leading-relaxed text-ink-faint">
-            {article.summary}
-          </p>
-        </div>
-
-        <div className="flex shrink-0 items-center gap-4 lg:w-56 lg:justify-end">
-          {sentiment && <StatusDot tone={sentiment.tone} label={sentiment.label} />}
-          <span aria-hidden="true" className="hidden h-3 w-px bg-line-strong lg:block" />
-          <span className="t-micro-tight text-ink-ghost">
-            {article.source} · {formatTimeAgo(article.publishedAt)}
-          </span>
-        </div>
-      </article>
-    </li>
   );
 }

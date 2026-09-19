@@ -3,32 +3,25 @@ import { siteConfig } from '@/config/site';
 import { ROUTES } from '@/lib/constants';
 import { Container } from '@/components/ui/section';
 import { LogoMark } from '@/components/brand/logo';
+import { FooterAccountLinks } from './footer-account-links';
 
-const COLUMNS = [
-  {
-    heading: 'Product',
-    links: [
-      { label: 'Signals', href: '#signals' },
-      { label: 'Intelligence', href: '#intelligence' },
-      { label: 'The dossier', href: '#dossier' },
-      { label: 'BTC research', href: `${ROUTES.research}/BTC` },
-    ],
-  },
-  {
-    heading: 'Account',
-    links: [
-      { label: 'Sign in', href: ROUTES.login },
-      { label: 'Create account', href: ROUTES.register },
-    ],
-  },
-  {
-    heading: 'Legal',
-    links: [
-      { label: 'Privacy', href: '#' },
-      { label: 'Terms', href: '#' },
-    ],
-  },
-] as const;
+const PRODUCT_COLUMN = {
+  heading: 'Product',
+  links: [
+    { label: 'Signals', href: '#signals' },
+    { label: 'Intelligence', href: '#intelligence' },
+    { label: 'The dossier', href: '#dossier' },
+    { label: 'BTC research', href: `${ROUTES.research}/BTC` },
+  ],
+} as const;
+
+const LEGAL_COLUMN = {
+  heading: 'Legal',
+  links: [
+    { label: 'Privacy', href: '#' },
+    { label: 'Terms', href: '#' },
+  ],
+} as const;
 
 export function Footer() {
   return (
@@ -45,23 +38,16 @@ export function Footer() {
             </p>
           </div>
 
-          {COLUMNS.map((col) => (
-            <nav key={col.heading} className="flex flex-col gap-4" aria-label={col.heading}>
-              <h2 className="t-micro">{col.heading}</h2>
-              <ul className="flex flex-col gap-2.5">
-                {col.links.map((link) => (
-                  <li key={link.label}>
-                    <Link
-                      href={link.href}
-                      className="text-[0.8125rem] text-ink-faint transition-colors hover:text-ink"
-                    >
-                      {link.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </nav>
-          ))}
+          <LinkColumn column={PRODUCT_COLUMN} />
+
+          {/* Account links depend on the session, so they come from a
+              client component rather than a static list. */}
+          <nav className="flex flex-col gap-4" aria-label="Account">
+            <h2 className="t-micro">Account</h2>
+            <FooterAccountLinks />
+          </nav>
+
+          <LinkColumn column={LEGAL_COLUMN} />
         </div>
 
         <div className="mt-16 flex flex-col-reverse items-start justify-between gap-6 border-t border-line-faint pt-6 sm:flex-row sm:items-center">
@@ -91,5 +77,29 @@ export function Footer() {
         </div>
       </Container>
     </footer>
+  );
+}
+
+function LinkColumn({
+  column,
+}: {
+  column: typeof PRODUCT_COLUMN | typeof LEGAL_COLUMN;
+}) {
+  return (
+    <nav className="flex flex-col gap-4" aria-label={column.heading}>
+      <h2 className="t-micro">{column.heading}</h2>
+      <ul className="flex flex-col gap-2.5">
+        {column.links.map((link) => (
+          <li key={link.label}>
+            <Link
+              href={link.href}
+              className="text-[0.8125rem] text-ink-faint transition-colors hover:text-ink"
+            >
+              {link.label}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </nav>
   );
 }

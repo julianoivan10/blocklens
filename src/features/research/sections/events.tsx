@@ -1,15 +1,18 @@
+import Link from 'next/link';
+import { ArrowRight } from 'lucide-react';
 import { EmptyState } from '@/components/ui/block';
-import { StatusDot } from '@/components/data/delta';
 import { ResearchSection } from './research-section';
-import { formatTimeAgo } from '@/lib/format';
+import { ArticleRow } from '@/features/news/article-row';
+import { ROUTES } from '@/lib/constants';
 import type { NewsArticle } from '@/types';
 
-const SENTIMENT = {
-  positive: { tone: 'up' as const, label: 'Positive' },
-  negative: { tone: 'down' as const, label: 'Negative' },
-  neutral: { tone: 'neutral' as const, label: 'Neutral' },
-};
-
+/**
+ * Developments for one asset.
+ *
+ * Shares the row component with the News page, so a story behaves the
+ * same way wherever a reader meets it: the row opens the BlockLens
+ * article page, and the jump to the publisher is an explicit action there.
+ */
 export function EventsSection({
   symbol,
   news,
@@ -23,49 +26,28 @@ export function EventsSection({
       ordinal="05"
       label="Events"
       title="Developments worth knowing"
-      intro="Reported activity around the asset, with the sentiment of each report stated."
-      aside={<span className="t-micro-tight text-ink-ghost">RSS and GNews</span>}
+      intro="Reported activity around the asset, with the source and timing of each report."
+      aside={
+        <Link
+          href={`${ROUTES.news}?asset=${symbol.toLowerCase()}`}
+          className="group inline-flex items-center gap-1.5 text-ink-faint transition-colors hover:text-ink"
+        >
+          <span className="t-micro-tight">All {symbol} news</span>
+          <ArrowRight className="size-3 transition-transform duration-300 ease-out-quint group-hover:translate-x-0.5" />
+        </Link>
+      }
     >
       {news.length === 0 ? (
         <EmptyState
           title="Nothing reported"
-          description={`No recent articles reference ${symbol} in the current feed.`}
+          description={`No recent article in the current window references ${symbol}. Nothing has been substituted in its place.`}
         />
       ) : (
-        <ol className="flex flex-col">
-          {news.map((article, i) => {
-            const sentiment = article.sentiment ? SENTIMENT[article.sentiment] : null;
-            return (
-              <li key={article.id} className="border-b border-line-faint last:border-b-0">
-                <article className="flex gap-6 py-6">
-                  <span className="t-micro-tight w-5 shrink-0 pt-0.5 text-ink-ghost">
-                    {String(i + 1).padStart(2, '0')}
-                  </span>
-
-                  <div className="flex min-w-0 flex-1 flex-col gap-2.5">
-                    <h3 className="max-w-[44rem] text-[1rem] font-medium leading-snug text-ink">
-                      {article.title}
-                    </h3>
-                    <p className="max-w-[44rem] text-[0.875rem] leading-relaxed text-ink-faint">
-                      {article.summary}
-                    </p>
-                    <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-2">
-                      <span className="t-micro-tight text-ink-ghost">
-                        {article.source} · {formatTimeAgo(article.publishedAt)}
-                      </span>
-                      {sentiment && (
-                        <>
-                          <span aria-hidden="true" className="h-2.5 w-px bg-line-strong" />
-                          <StatusDot tone={sentiment.tone} label={sentiment.label} />
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </article>
-              </li>
-            );
-          })}
-        </ol>
+        <ul className="-ml-4 flex flex-col border-t border-line-faint">
+          {news.map((article, i) => (
+            <ArticleRow key={article.id} article={article} index={i + 1} />
+          ))}
+        </ul>
       )}
     </ResearchSection>
   );

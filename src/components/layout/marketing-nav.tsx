@@ -8,6 +8,7 @@ import { ROUTES } from '@/lib/constants';
 import { Button } from '@/components/ui/button';
 import { Sheet } from '@/components/ui/sheet';
 import { Wordmark } from '@/components/brand/logo';
+import { useAuth } from '@/hooks/use-auth';
 
 const LINKS = [
   { href: '#signals', label: 'Signals' },
@@ -27,6 +28,7 @@ const LINKS = [
 export function MarketingNav() {
   const [settled, setSettled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const { isAuthenticated, isLoading, user } = useAuth();
 
   useEffect(() => {
     // Passive scroll read, no layout work in the handler.
@@ -74,16 +76,31 @@ export function MarketingNav() {
           </div>
 
           <div className="ml-auto hidden items-center gap-2 lg:flex">
-            <Link href={ROUTES.login}>
-              <Button variant="quiet" size="sm">
-                Sign in
-              </Button>
-            </Link>
-            <Link href={ROUTES.register}>
-              <Button variant="primary" size="sm">
-                Start researching
-              </Button>
-            </Link>
+            {/* Resolved on the client so the landing page stays statically
+                rendered — reading the session cookie here would make it
+                dynamic. Nothing renders until the session is known, so a
+                signed-in visitor is never shown "Sign in" and then has it
+                swapped out from under them. */}
+            {isLoading ? null : isAuthenticated ? (
+              <Link href={ROUTES.dashboard}>
+                <Button variant="primary" size="sm">
+                  Open workspace
+                </Button>
+              </Link>
+            ) : (
+              <>
+                <Link href={ROUTES.login}>
+                  <Button variant="quiet" size="sm">
+                    Sign in
+                  </Button>
+                </Link>
+                <Link href={ROUTES.register}>
+                  <Button variant="primary" size="sm">
+                    Start researching
+                  </Button>
+                </Link>
+              </>
+            )}
           </div>
 
           <button
@@ -113,16 +130,33 @@ export function MarketingNav() {
           </div>
 
           <div className="flex flex-col gap-2 pt-6">
-            <Link href={ROUTES.register} onClick={() => setMenuOpen(false)}>
-              <Button variant="primary" size="lg" className="w-full">
-                Start researching
-              </Button>
-            </Link>
-            <Link href={ROUTES.login} onClick={() => setMenuOpen(false)}>
-              <Button variant="line" size="lg" className="w-full">
-                Sign in
-              </Button>
-            </Link>
+            {isLoading ? null : isAuthenticated ? (
+              <>
+                <Link href={ROUTES.dashboard} onClick={() => setMenuOpen(false)}>
+                  <Button variant="primary" size="lg" className="w-full">
+                    Open workspace
+                  </Button>
+                </Link>
+                {user?.email && (
+                  <p className="t-micro-tight mt-2 break-all text-center text-ink-ghost">
+                    Signed in as {user.email}
+                  </p>
+                )}
+              </>
+            ) : (
+              <>
+                <Link href={ROUTES.register} onClick={() => setMenuOpen(false)}>
+                  <Button variant="primary" size="lg" className="w-full">
+                    Start researching
+                  </Button>
+                </Link>
+                <Link href={ROUTES.login} onClick={() => setMenuOpen(false)}>
+                  <Button variant="line" size="lg" className="w-full">
+                    Sign in
+                  </Button>
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </Sheet>

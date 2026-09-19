@@ -1,7 +1,5 @@
-import Link from 'next/link';
-import { ROUTES } from '@/lib/constants';
-import { Button } from '@/components/ui/button';
 import { Container } from '@/components/ui/section';
+import { PrimaryCta } from './primary-cta';
 
 /**
  * The close.
@@ -25,18 +23,12 @@ export function ClosingSection() {
           </h2>
 
           <p className="t-lede mt-8 max-w-[32rem]">
-            Free to open an account. Every figure is labelled with where it came from, and
-            connecting your own provider keys turns the mock feeds live.
+            Market data, on-chain activity and news are live. Every figure is labelled with
+            where it came from, and anything a provider cannot supply is left out rather
+            than filled in.
           </p>
 
-          <div className="mt-10 flex flex-wrap items-center gap-6">
-            <Link href={ROUTES.register}>
-              <Button variant="primary" size="lg">
-                Create an account
-              </Button>
-            </Link>
-            <span className="t-micro-tight text-ink-ghost">No card required</span>
-          </div>
+          <PrimaryCta className="mt-10" note="No card required" />
         </div>
       </Container>
     </section>

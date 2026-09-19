@@ -1,11 +1,10 @@
 import { Suspense } from 'react';
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
-import { ROUTES } from '@/lib/constants';
-import { Button } from '@/components/ui/button';
 import { Container, SectionMark } from '@/components/ui/section';
 import { FieldBackdrop } from '@/components/visual/field-backdrop';
 import { MarketRail, MarketRailSkeleton } from './market-rail';
+import { PrimaryCta } from './primary-cta';
 
 /**
  * The hero.
@@ -49,11 +48,7 @@ export function HeroSection() {
           </p>
 
           <div className="mt-12 flex flex-wrap items-center gap-x-8 gap-y-4">
-            <Link href={ROUTES.register}>
-              <Button variant="primary" size="lg">
-                Start researching
-              </Button>
-            </Link>
+            <PrimaryCta />
 
             {/* A text link, not a second button competing with the first. */}
             <Link

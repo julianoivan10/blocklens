@@ -23,20 +23,31 @@ export function MoversPanel({
   return (
     <div className="flex min-w-0 flex-col">
       <Tabs defaultValue="gainers">
+        {/* The tab strip has to occupy exactly the height of a one-line
+            text aside, or this column's head rule sits lower than the
+            panels beside it. `py-0` collapses the trigger to its text
+            box, and `-bottom-3` drops the active underline onto the
+            head's own hairline — 12px below, the head's `pb-3`. */}
         <BlockHead
           label="Movers · 24h"
           aside={
-            <TabsList className="-mb-3 gap-5 border-b-0">
-              <TabsTrigger value="gainers">Up</TabsTrigger>
-              <TabsTrigger value="losers">Down</TabsTrigger>
+            <TabsList className="gap-5 border-b-0">
+              <TabsTrigger value="gainers" className="py-0 after:-bottom-3">
+                Up
+              </TabsTrigger>
+              <TabsTrigger value="losers" className="py-0 after:-bottom-3">
+                Down
+              </TabsTrigger>
             </TabsList>
           }
         />
 
-        <TabsContent value="gainers">
+        {/* `mt-0` overrides the panel default so the first row starts on
+            the same line as the neighbouring columns' first rows. */}
+        <TabsContent value="gainers" className="mt-0">
           <MoverList items={gainers} emptyLabel="No gainers to report" />
         </TabsContent>
-        <TabsContent value="losers">
+        <TabsContent value="losers" className="mt-0">
           <MoverList items={losers} emptyLabel="No losers to report" />
         </TabsContent>
       </Tabs>

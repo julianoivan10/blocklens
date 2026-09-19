@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { fetchJson, ProviderError } from '../http';
-import { inferTokens } from './rss';
+import { articleSlug, inferTokens } from './normalise';
 import type { NewsArticle } from '@/types';
 
 /**
@@ -72,12 +72,17 @@ export class GNewsProvider {
       .filter((a) => a.title && a.url && !Number.isNaN(Date.parse(a.publishedAt)))
       .map((a) => ({
         id: `gnews:${a.url}`,
+        slug: articleSlug(a.title, a.url),
         title: a.title,
         summary: a.description?.trim() || a.title,
+        // The publication's own name, not "GNews" — the reader cares
+        // who wrote it, not which aggregator delivered it.
         source: a.source?.name || 'GNews',
         url: a.url,
         publishedAt: new Date(a.publishedAt).toISOString(),
-        image: a.image ?? undefined,
+        imageUrl: a.image ?? undefined,
+        // GNews exposes no taxonomy, so topics are genuinely absent
+        // here rather than guessed from the text.
         relatedTokens: inferTokens(`${a.title} ${a.description ?? ''}`),
       }));
   }

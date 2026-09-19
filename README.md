@@ -110,6 +110,22 @@ components exist only where there is real interaction: the price chart, the
 search console, the contents tracker, the watchlist controls, the account menu,
 and the forms.
 
+### News routes without persistence
+
+`/news/[slug]` resolves out of the cached provider window rather than a
+database. A slug is a pure function of the article's title and canonical URL
+(readable stem plus an FNV-1a hash of the URL), so it is stable across requests,
+unique even when two outlets run the same headline, and needs no stored row. An
+article that ages out of the window returns 404 with a page that says exactly
+that — which is why no migration was added for this feature.
+
+Both providers normalise into one `NewsArticle`, and duplicates are collapsed on
+the headline with the richer record winning; the loser's image, excerpt, topics
+and tickers are folded in rather than discarded. Topic filters come from the
+categories sources file themselves, mapped onto a small shared set — a chip only
+appears when at least two articles really carry it, so the bar never offers an
+invented category or an empty filter.
+
 ### Caching
 
 `fetch` responses use the framework data cache with a window chosen per endpoint
