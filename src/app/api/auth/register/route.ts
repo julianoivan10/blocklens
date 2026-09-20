@@ -6,6 +6,7 @@ import { createVerificationToken } from '@/server/auth/tokens';
 import { getEmailService } from '@/services/email';
 import { registerSchema } from '@/lib/validations';
 import type { ApiResponse, SessionUser } from '@/types';
+import { logServerError } from '@/server/log';
 
 export async function POST(request: NextRequest): Promise<NextResponse<ApiResponse<SessionUser>>> {
   try {
@@ -53,7 +54,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
       { status: 201 }
     );
   } catch (error) {
-    console.error('Registration error:', error);
+    logServerError('auth:register', error);
     return NextResponse.json(
       { success: false, error: 'An unexpected error occurred. Please try again.' },
       { status: 500 }

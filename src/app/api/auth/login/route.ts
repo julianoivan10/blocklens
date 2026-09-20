@@ -4,6 +4,7 @@ import { verifyPassword } from '@/server/auth/password';
 import { createSession } from '@/server/auth/session';
 import { loginSchema } from '@/lib/validations';
 import type { ApiResponse, SessionUser } from '@/types';
+import { logServerError } from '@/server/log';
 
 export async function POST(request: NextRequest): Promise<NextResponse<ApiResponse<SessionUser>>> {
   try {
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
       data: { id: user.id, email: user.email, name: user.name },
     });
   } catch (error) {
-    console.error('Login error:', error);
+    logServerError('auth:login', error);
     return NextResponse.json(
       { success: false, error: 'An unexpected error occurred. Please try again.' },
       { status: 500 }

@@ -3,6 +3,7 @@ import { createResetToken } from '@/server/auth/tokens';
 import { getEmailService } from '@/services/email';
 import { forgotPasswordSchema } from '@/lib/validations';
 import type { ApiResponse } from '@/types';
+import { logServerError } from '@/server/log';
 
 export async function POST(request: NextRequest): Promise<NextResponse<ApiResponse>> {
   try {
@@ -30,7 +31,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
       message: 'If an account with that email exists, we sent a password reset link.',
     });
   } catch (error) {
-    console.error('Forgot password error:', error);
+    logServerError('auth:forgot-password', error);
     return NextResponse.json(
       { success: false, error: 'Failed to process request' },
       { status: 500 }

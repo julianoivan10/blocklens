@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyEmailToken } from '@/server/auth/tokens';
 import type { ApiResponse } from '@/types';
+import { logServerError } from '@/server/log';
 
 export async function POST(request: NextRequest): Promise<NextResponse<ApiResponse>> {
   try {
@@ -22,7 +23,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
 
     return NextResponse.json({ success: true, message: 'Email verified successfully' });
   } catch (error) {
-    console.error('Email verification error:', error);
+    logServerError('auth:verify-email', error);
     return NextResponse.json(
       { success: false, error: 'Failed to verify email' },
       { status: 500 }

@@ -4,6 +4,7 @@ import { hashPassword } from '@/server/auth/password';
 import { prisma } from '@/server/db';
 import { resetPasswordSchema } from '@/lib/validations';
 import type { ApiResponse } from '@/types';
+import { logServerError } from '@/server/log';
 
 export async function POST(request: NextRequest): Promise<NextResponse<ApiResponse>> {
   try {
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
       message: 'Password reset successfully. Please log in with your new password.',
     });
   } catch (error) {
-    console.error('Reset password error:', error);
+    logServerError('auth:reset-password', error);
     return NextResponse.json(
       { success: false, error: 'Failed to reset password' },
       { status: 500 }

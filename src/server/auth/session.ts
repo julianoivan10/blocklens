@@ -5,6 +5,7 @@ import { cookies } from 'next/headers';
 import { prisma } from '@/server/db';
 import { AUTH_COOKIE_NAME, AUTH_COOKIE_MAX_AGE, SESSION_EXPIRY_DAYS } from '@/lib/constants';
 import { getAuthSecret } from './secret';
+import { logServerError } from '@/server/log';
 import type { SessionUser } from '@/types';
 
 export async function createSession(userId: string): Promise<string> {
@@ -40,37 +41,61 @@ export async function createSession(userId: string): Promise<string> {
 }
 
 export async function verifySession(): Promise<SessionUser | null> {
+  const cookieStore = await cookies();
+  const jwt = cookieStore.get(AUTH_COOKIE_NAME)?.value;
+  if (!jwt) return null;
+
+  /*
+   * Two failures are possible here and they are not the same thing.
+   *
+   * A cookie that is missing, malformed, expired or signed with a
+   * different key means "not signed in" — return null and let the caller
+   * send them to the login page. That is normal.
+   *
+   * A database that cannot be reached does NOT mean "not signed in". The
+   * previous blanket catch reported it as such, which turned an outage
+   * into an infinite redirect: the proxy checks only the JWT signature,
+   * so it waved a valid session through to /dashboard, the page then
+   * read null here and bounced to /login, and the proxy bounced it
+   * straight back. Infrastructure failures are logged and rethrown so
+   * they surface as an error instead of a loop.
+   */
+  let sessionId: string;
+  let token: string;
+
   try {
-    const cookieStore = await cookies();
-    const jwt = cookieStore.get(AUTH_COOKIE_NAME)?.value;
-    if (!jwt) return null;
-
     const { payload } = await jwtVerify(jwt, getAuthSecret());
-    const sessionId = payload.sessionId as string;
-    const token = payload.token as string;
-
-    if (!sessionId || !token) return null;
-
-    const session = await prisma.session.findUnique({
-      where: { id: sessionId, token },
-      include: { user: { select: { id: true, email: true, name: true, emailVerified: true, image: true } } },
-    });
-
-    if (!session || session.expiresAt < new Date()) {
-      if (session) {
-        await prisma.session.delete({ where: { id: session.id } });
-      }
-      return null;
-    }
-
-    return {
-      id: session.user.id,
-      email: session.user.email,
-      name: session.user.name,
-    };
+    sessionId = payload.sessionId as string;
+    token = payload.token as string;
   } catch {
     return null;
   }
+
+  if (!sessionId || !token) return null;
+
+  const session = await prisma.session.findUnique({
+    where: { id: sessionId, token },
+    include: {
+      user: { select: { id: true, email: true, name: true, emailVerified: true, image: true } },
+    },
+  });
+
+  if (!session || session.expiresAt < new Date()) {
+    if (session) {
+      // Best effort: failing to reap an expired row must not stop us
+      // reporting that the caller is signed out.
+      await prisma.session.delete({ where: { id: session.id } }).catch((error) => {
+        logServerError('auth:session-reap', error);
+      });
+    }
+    return null;
+  }
+
+  return {
+    id: session.user.id,
+    email: session.user.email,
+    name: session.user.name,
+  };
 }
 
 export async function destroySession(): Promise<void> {
@@ -89,8 +114,10 @@ export async function destroySession(): Promise<void> {
       }
     }
     cookieStore.delete(AUTH_COOKIE_NAME);
-  } catch {
-    // Ignore errors during cleanup
+  } catch (error) {
+    // Signing out must always clear the cookie, so this stays forgiving —
+    // but the reason is no longer discarded.
+    logServerError('auth:destroy-session', error);
   }
 }
 
