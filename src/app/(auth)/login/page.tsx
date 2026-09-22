@@ -61,6 +61,11 @@ function LoginForm() {
       <AuthHeading label="Sign in" title="Welcome back." />
 
       <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-6" noValidate>
+        {searchParams.get('reason') === 'session-ended' && !serverError && (
+          <p role="status" className="t-micro-tight border-l border-line-strong pl-3 text-ink-faint">
+            Your session ended. Sign in again to continue.
+          </p>
+        )}
         <FormError message={serverError} />
 
         <Input

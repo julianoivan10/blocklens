@@ -22,7 +22,8 @@ npm run dev
 `openssl rand -base64 32`. In production the app refuses to sign sessions
 without it rather than falling back to a default key.
 
-Only `DATABASE_URL` and `AUTH_SECRET` are required. Market data, DeFi metrics and
+Only `DATABASE_URL`, `DIRECT_URL` and `AUTH_SECRET` are required. On Vercel, `DATABASE_URL`
+must be the Supabase **pooler** (IPv4) — see `.env.example`. Market data, DeFi metrics and
 news are live without any provider key at all; see **Providers** below for what
 each key adds and what happens without it.
 
@@ -34,10 +35,11 @@ each key adds and what happens without it.
 |---|---|---|---|
 | Market data | CoinGecko | no | Live on the public tier; a key only raises the rate limit |
 | DeFi metrics | DeFiLlama | **none exists** | Always live — the API needs no authentication |
-| Chain metrics | Alchemy | yes | Block-level readings are omitted; DeFi metrics still shown |
+| Chain data & wallet import | Alchemy | yes | Wallet import is off; block-level readings omitted |
+| Token prices by contract | Alchemy Prices | yes (same key) | Tokens stay unpriced — never estimated |
 | News | RSS + GNews | RSS no, GNews yes | RSS alone; GNews widens coverage |
-| AI synthesis | OpenAI | yes | The Interpretation section reports itself unavailable |
-| Email | Resend | yes | Messages are written to the server console |
+| AI interpretation & insights | Google Gemini (`GEMINI_MODEL`) | yes | Both report themselves unavailable |
+| Email | Resend | yes | Dev: written to the console. Production: reported as failed |
 | Risk scoring | *computed here* | — | Derived from live market and chain data |
 | Supply facts | *derived here* | — | Derived from the market snapshot |
 
@@ -51,7 +53,7 @@ silent substitute for a failed call.
 unavailable" state, not a remembered or fabricated figure. This is enforced by
 the `DataResult` envelope in `src/services/result.ts`, and it is why the
 Interpretation section goes blank rather than showing canned analysis when
-OpenAI is unreachable.
+Gemini is unreachable.
 
 Where no provider sells the thing at all — risk scores, supply breakdowns —
 BlockLens either computes it from data it already holds and **states the
@@ -64,6 +66,55 @@ this stack reports them.
 Run `npm run verify:providers` to exercise every adapter against its real API and
 print what came back. Domains without a key are reported as skipped, never as
 passing.
+
+---
+
+## Portfolio
+
+Transactions are the source of truth; everything else is derived by the
+deterministic engine in `src/lib/portfolio/`. Gemini never computes a figure.
+
+**Wallet import** is read-only: a public address, a chain and a label. Input
+that looks like a private key or recovery phrase is refused and never stored.
+Supported chains — Ethereum, Base, Arbitrum One, OP Mainnet, Polygon PoS and
+Solana — are the ones verified to return full history through Alchemy. Each
+sync imports a bounded slice and resumes where it stopped.
+
+**Classification.** A transaction is reduced to signed asset movements, then:
+different assets in and out → `SWAP`; only in → `TRANSFER_IN`; only out →
+`TRANSFER_OUT`; the gas the wallet paid → `FEE`; Solana Stake-program
+movements → `STAKE`/`UNSTAKE`. `BUY` and `SELL` are never inferred from chain
+data — they come from manual entries or from the user reclassifying a leg.
+Transfers between tracked wallets are marked internal. Receipts from untracked
+addresses keep an **unknown** cost basis and are flagged for review.
+
+**Cost basis: weighted-average cost**, one pool per asset (native gas assets
+pooled across chains, tokens per contract). A disposal removes a proportional
+slice of cost, so the average of what remains is unchanged. Realized PnL is
+booked on sales, the outgoing side of swaps, and fees (a disposal at zero
+proceeds). Transfers realize nothing. Units with unknown cost count toward
+value but are excluded from PnL. PnL % = total PnL ÷ all known acquisition
+cost. The full rules are at the top of `engine.ts`.
+
+**Performance** is time-weighted (deposits and withdrawals are not returns),
+on daily closes, over the last 30/90/180/365 days, compared with BTC and ETH
+over the same dates. A total-market benchmark needs a paid CoinGecko plan and
+is shown as unavailable rather than approximated.
+
+**Risk metrics** — volatility, max drawdown, Sharpe, Sortino, correlation
+with BTC, asset/chain concentration (HHI), stablecoin share — each state their
+period, method, required data and limitations, and say "Insufficient data"
+below 30 daily returns. There is no composite risk score.
+
+**Alerts** (price above/below, 24h move, drawdown, allocation, large
+transaction, wallet activity) fire on entering a condition, respect a
+cooldown, and are deduplicated by a unique key per occurrence. They are
+evaluated daily by Vercel Cron (`vercel.json`, `CRON_SECRET`) or on demand.
+
+**AI insights** receive a numbered table of computed facts and must cite fact
+ids. Statements that cite unknown facts, quote a number not among the facts,
+or read as trading advice are dropped before display; the rest are labelled
+FACT or AI INTERPRETATION. Output is cached by input hash.
 
 ---
 
@@ -197,6 +248,9 @@ npm run build             # production build
 npm run lint              # eslint, clean at --max-warnings=0
 npm run typecheck         # tsc --noEmit
 npm run verify:providers  # exercise every adapter against its real API
+npm run verify:auth       # auth preflight against the configured database
+npm test                  # unit tests (engine, classification, risk, alerts, AI, providers — mocked)
+npm run test:e2e          # end-to-end against a running server (BASE_URL), real providers
 ```
 
 ---

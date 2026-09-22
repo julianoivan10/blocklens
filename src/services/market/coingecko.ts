@@ -37,6 +37,17 @@ const REVALIDATE = {
   search: 3_600,
 } as const;
 
+export interface MarketQuote {
+  price: number;
+  change24hPct: number | null;
+  marketCap: number | null;
+  volume24h: number | null;
+  asOf: string;
+  source: string;
+  name?: string;
+  image?: string;
+}
+
 /* ---------- provider response shapes (never exported) ---------- */
 
 interface CgMarket {
@@ -59,6 +70,7 @@ interface CgMarket {
   ath_date: string | null;
   atl: number | null;
   atl_date: string | null;
+  last_updated?: string | null;
 }
 
 interface CgGlobal {
@@ -196,7 +208,7 @@ export class CoinGeckoMarketService implements MarketDataService {
    * preferring an exact ticker match with the best market-cap rank so a
    * lookup does not land on an obscure namesake.
    */
-  private async resolveId(symbol: string): Promise<string | null> {
+  private async resolveId(symbol: string, exactOnly = false): Promise<string | null> {
     const upper = symbol.toUpperCase();
     const mapped = knownId(upper);
     if (mapped) return mapped;
@@ -209,9 +221,14 @@ export class CoinGeckoMarketService implements MarketDataService {
 
     const exact = results.coins
       .filter((c) => c.symbol.toUpperCase() === upper)
+      // Unranked namesakes are exactly the copycat listings a valuation
+      // must not land on.
+      .filter((c) => !exactOnly || c.market_cap_rank !== null)
       .sort((a, b) => (a.market_cap_rank ?? 1e9) - (b.market_cap_rank ?? 1e9));
 
-    return exact[0]?.id ?? results.coins[0]?.id ?? null;
+    // The loose fallback suits search-as-you-type; a valuation must not
+    // silently price one asset with another's quote.
+    return exact[0]?.id ?? (exactOnly ? null : results.coins[0]?.id ?? null);
   }
 
   private async markets(ids: string[]): Promise<CgMarket[]> {
@@ -374,8 +391,8 @@ export class CoinGeckoMarketService implements MarketDataService {
    * product, not a trading terminal — a clean daily close line is both
    * the honest option and the more readable one.
    */
-  async getPriceSeries(symbol: string, days: number): Promise<SimplePrice[]> {
-    const id = await this.resolveId(symbol);
+  async getPriceSeries(symbol: string, days: number, exactOnly = false): Promise<SimplePrice[]> {
+    const id = await this.resolveId(symbol, exactOnly);
     if (!id) return [];
 
     const window = Math.max(1, Math.min(365, Math.round(days)));
@@ -421,6 +438,41 @@ export class CoinGeckoMarketService implements MarketDataService {
       }))
       // Ranked listings first; unranked long-tail entries after.
       .sort((a, b) => (a.marketCapRank ?? 1e9) - (b.marketCapRank ?? 1e9));
+  }
+
+  /**
+   * Current quotes for arbitrary tickers, for the portfolio and alerts.
+   * Unlike `toOverview`, a missing field stays missing: a quote without
+   * a price is dropped rather than reported as $0.
+   */
+  async getQuotes(symbols: readonly string[]): Promise<Map<string, MarketQuote>> {
+    const unique = [...new Set(symbols.map((s) => s.toUpperCase()))];
+    const resolved = await Promise.all(
+      unique.map(async (symbol) => [symbol, await this.resolveId(symbol, true).catch(() => null)] as const)
+    );
+    const idToSymbol = new Map<string, string>();
+    for (const [symbol, id] of resolved) if (id) idToSymbol.set(id, symbol);
+
+    const quotes = new Map<string, MarketQuote>();
+    const ids = [...idToSymbol.keys()];
+    for (let i = 0; i < ids.length; i += 100) {
+      const rows = await this.markets(ids.slice(i, i + 100));
+      for (const row of rows) {
+        const symbol = idToSymbol.get(row.id);
+        if (!symbol || typeof row.current_price !== 'number') continue;
+        quotes.set(symbol, {
+          price: row.current_price,
+          change24hPct: row.price_change_percentage_24h ?? null,
+          marketCap: row.market_cap ?? null,
+          volume24h: row.total_volume ?? null,
+          asOf: row.last_updated ?? new Date().toISOString(),
+          source: 'CoinGecko',
+          name: row.name,
+          image: row.image ?? undefined,
+        });
+      }
+    }
+    return quotes;
   }
 
   /** Several assets in one request, for the landing rail. */

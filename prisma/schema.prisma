@@ -40,6 +40,11 @@ model User {
   watchlists      Watchlist[]
   researchHistory ResearchHistory[]
   savedResearch   SavedResearch[]
+  wallets         Wallet[]
+  transactions    Transaction[]
+  alerts          Alert[]
+  alertEvents     AlertEvent[]
+  aiInsights      AiInsight[]
 
   @@map("users")
 }
@@ -75,6 +80,8 @@ model WatchlistItem {
   watchlistId String
   symbol      String
   name        String
+  /// Free-text note owned by the user. Never sent to a provider.
+  notes       String?
   addedAt     DateTime @default(now())
   watchlist   Watchlist @relation(fields: [watchlistId], references: [id], onDelete: Cascade)
 
@@ -108,4 +115,228 @@ model SavedResearch {
 
   @@index([userId])
   @@map("saved_research")
+}
+
+// ============================================================
+// Portfolio
+//
+// Transactions are the source of truth. Holdings, cost basis and PnL
+// are derived from them by the deterministic engine in
+// src/lib/portfolio/engine.ts; nothing here stores a computed total
+// that could drift from its inputs.
+// ============================================================
+
+enum ChainId {
+  ETHEREUM
+  BASE
+  ARBITRUM
+  OPTIMISM
+  POLYGON
+  SOLANA
+}
+
+enum TxType {
+  BUY
+  SELL
+  TRANSFER_IN
+  TRANSFER_OUT
+  SWAP
+  FEE
+  STAKE
+  UNSTAKE
+  UNKNOWN
+}
+
+enum TxStatus {
+  CONFIRMED
+  FAILED
+}
+
+enum TxSource {
+  WALLET
+  MANUAL
+}
+
+enum SyncStatus {
+  PENDING
+  SYNCING
+  PARTIAL
+  COMPLETE
+  ERROR
+}
+
+/// A read-only watched address. BlockLens never holds keys.
+model Wallet {
+  id           String     @id @default(cuid())
+  userId       String
+  chain        ChainId
+  /// EVM addresses are stored lower-cased; Solana addresses are case-sensitive base58.
+  address      String
+  label        String
+  syncStatus   SyncStatus @default(PENDING)
+  syncError    String?
+  /// Provider pagination state, so a long history resumes where it stopped.
+  syncCursor   Json?
+  lastSyncedAt DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+  balances     WalletBalance[]
+
+  @@unique([userId, chain, address])
+  @@index([userId])
+  @@map("wallets")
+}
+
+/// The balance the chain itself reported at the last sync. Used to
+/// reconcile the ledger, never to replace it.
+model WalletBalance {
+  id        String   @id @default(cuid())
+  walletId  String
+  assetKey  String
+  symbol    String
+  quantity  Decimal  @db.Decimal(78, 18)
+  updatedAt DateTime @updatedAt
+  wallet    Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@unique([walletId, assetKey])
+  @@map("wallet_balances")
+}
+
+/// One asset movement. A swap is two rows sharing a groupId.
+model Transaction {
+  id           String   @id @default(cuid())
+  userId       String
+  walletId     String?
+  source       TxSource
+  chain        ChainId?
+  /// Null for manual entries.
+  hash         String?
+  /// Provider-unique id of this leg, e.g. "<chain>:<hash>:log:12". Dedupes re-syncs.
+  externalId   String
+  /// Legs of one on-chain transaction share this.
+  groupId      String
+  timestamp    DateTime
+  fromAddress  String?
+  toAddress    String?
+  /// Cost-basis pool: "sym:ETH", "erc20:BASE:0x…", "spl:<mint>".
+  assetKey     String
+  symbol       String
+  assetName    String?
+  contract     String?
+  /// Always positive. Direction is carried by `direction` (+1 in, -1 out).
+  amount       Decimal  @db.Decimal(78, 18)
+  direction    Int
+  /// USD value of this leg at the time, when a price was available.
+  usdValue     Decimal? @db.Decimal(38, 8)
+  /// Unit price behind usdValue, and where it came from.
+  priceUsd     Decimal? @db.Decimal(38, 12)
+  priceSource  String?
+  type         TxType
+  status       TxStatus @default(CONFIRMED)
+  /// True when the counterparty is another wallet this user tracks.
+  isInternal   Boolean  @default(false)
+  needsReview  Boolean  @default(false)
+  reviewReason String?
+  /// Set when the user reclassified the leg; sync never overwrites it.
+  userOverride Boolean  @default(false)
+  metadata     Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet Wallet? @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, externalId])
+  @@index([userId, timestamp])
+  @@index([userId, assetKey])
+  @@index([walletId, timestamp])
+  @@map("transactions")
+}
+
+// ============================================================
+// Alerts
+// ============================================================
+
+enum AlertType {
+  PRICE_ABOVE
+  PRICE_BELOW
+  PERCENT_MOVE
+  PORTFOLIO_DRAWDOWN
+  ALLOCATION_ABOVE
+  LARGE_TRANSACTION
+  WALLET_ACTIVITY
+}
+
+model Alert {
+  id              String    @id @default(cuid())
+  userId          String
+  type            AlertType
+  /// Asset symbol for price, move and allocation alerts.
+  symbol          String?
+  /// Wallet scope for activity and large-transaction alerts; null = all.
+  walletId        String?
+  threshold       Decimal?  @db.Decimal(38, 8)
+  cooldownMinutes Int       @default(360)
+  enabled         Boolean   @default(true)
+  notifyEmail     Boolean   @default(false)
+  /// Whether the condition held at the last evaluation. Alerts fire on
+  /// the transition into the condition, not on every check while it holds.
+  lastState       Boolean   @default(false)
+  /// High-water mark for transaction-driven alerts.
+  lastSeenAt      DateTime?
+  lastEvaluatedAt DateTime?
+  lastTriggeredAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  events AlertEvent[]
+
+  @@index([userId])
+  @@index([enabled])
+  @@map("alerts")
+}
+
+model AlertEvent {
+  id          String    @id @default(cuid())
+  alertId     String
+  userId      String
+  triggeredAt DateTime  @default(now())
+  title       String
+  detail      String
+  observed    Decimal?  @db.Decimal(38, 8)
+  /// Unique per real-world occurrence, so a retried evaluation cannot
+  /// record, or email, the same event twice.
+  dedupeKey   String    @unique
+  emailed     Boolean   @default(false)
+  readAt      DateTime?
+
+  alert Alert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, triggeredAt])
+  @@map("alert_events")
+}
+
+// ============================================================
+// AI insights. Cached, so a page view never triggers a model call.
+// ============================================================
+
+model AiInsight {
+  id        String   @id @default(cuid())
+  userId    String
+  kind      String
+  model     String
+  /// Hash of the structured input; identical input reuses the output.
+  inputHash String
+  output    Json
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, kind, createdAt])
+  @@map("ai_insights")
 }

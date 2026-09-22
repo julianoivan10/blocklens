@@ -2,6 +2,7 @@ import 'server-only';
 
 import { SignJWT, jwtVerify } from 'jose';
 import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 import { prisma } from '@/server/db';
 import { AUTH_COOKIE_NAME, AUTH_COOKIE_MAX_AGE, SESSION_EXPIRY_DAYS } from '@/lib/constants';
 import { getAuthSecret } from './secret';
@@ -96,6 +97,24 @@ export async function verifySession(): Promise<SessionUser | null> {
     email: session.user.email,
     name: session.user.name,
   };
+}
+
+/**
+ * The signed-in user for a protected server component, or a redirect.
+ *
+ * A plain `redirect('/login')` here used to loop. The proxy only checks
+ * the JWT signature, so a cookie whose database session had been revoked
+ * (password reset, "sign out everywhere", expiry) still looked signed in
+ * there: /login was bounced back to /dashboard and the person could never
+ * reach the form. The expired route clears the stale cookie first, which
+ * breaks the cycle.
+ */
+export async function requireUser(callbackPath: string): Promise<SessionUser> {
+  const user = await verifySession();
+  if (user) return user;
+
+  const params = new URLSearchParams({ callbackUrl: callbackPath });
+  redirect(`/api/auth/expired?${params}`);
 }
 
 export async function destroySession(): Promise<void> {

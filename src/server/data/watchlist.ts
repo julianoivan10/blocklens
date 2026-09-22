@@ -43,7 +43,9 @@ export async function getWatchlist(userId: string): Promise<WatchlistWithItems> 
         symbol: item.symbol,
         name: item.name,
         addedAt: item.addedAt,
-        currentPrice: snapshot?.currentPrice,
+        notes: item.notes,
+        // A provider row without a price arrives as 0; show it as missing.
+        currentPrice: snapshot?.currentPrice ? snapshot.currentPrice : undefined,
         priceChangePercentage24h: snapshot?.priceChangePercentage24h,
         marketCap: snapshot?.marketCap,
       };
@@ -87,6 +89,15 @@ export async function addToWatchlist(userId: string, symbol: string, name: strin
     create: { watchlistId: watchlist.id, symbol: upper, name },
     update: { name },
   });
+}
+
+/** Sets or clears the note on one of the user's own watchlist rows. */
+export async function setWatchlistNote(userId: string, symbol: string, notes: string | null) {
+  const { count } = await prisma.watchlistItem.updateMany({
+    where: { symbol: symbol.toUpperCase(), watchlist: { userId } },
+    data: { notes },
+  });
+  return count;
 }
 
 export async function removeFromWatchlist(userId: string, symbol: string) {

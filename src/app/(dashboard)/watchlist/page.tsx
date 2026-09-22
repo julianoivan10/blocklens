@@ -1,17 +1,15 @@
-import { redirect } from 'next/navigation';
 import { Container } from '@/components/ui/section';
 import { ROUTES } from '@/lib/constants';
-import { verifySession } from '@/server/auth/session';
+import { requireUser } from '@/server/auth/session';
 import { getWatchlist } from '@/server/data/watchlist';
 import { WatchlistView } from '@/features/watchlist/watchlist-view';
 
 export const metadata = { title: 'Watchlist' };
 
 export default async function WatchlistPage() {
-  const user = await verifySession();
-  // Middleware already guards this route; this is the defence in depth
+  // The proxy already guards this route; this is the defence in depth
   // that keeps the data read from ever running without a session.
-  if (!user) redirect(ROUTES.login);
+  const user = await requireUser(ROUTES.watchlist);
 
   const watchlist = await getWatchlist(user.id);
 

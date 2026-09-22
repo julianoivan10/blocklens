@@ -5,6 +5,7 @@ import {
   addToWatchlist,
   getWatchlist,
   removeFromWatchlist,
+  setWatchlistNote,
 } from '@/server/data/watchlist';
 import type { ApiResponse, WatchlistWithItems } from '@/types';
 
@@ -60,6 +61,37 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
       { success: false, error: 'Could not update your watchlist' },
       { status: 500 }
     );
+  }
+}
+
+const noteSchema = z.object({
+  symbol: mutateSchema.shape.symbol,
+  notes: z.string().trim().max(500, 'Notes are limited to 500 characters').nullable(),
+});
+
+/** Sets the private note on a watchlist row. Notes never leave the database. */
+export async function PATCH(request: NextRequest): Promise<NextResponse<ApiResponse<null>>> {
+  const user = await verifySession();
+  if (!user) {
+    return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+  }
+
+  try {
+    const parsed = noteSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' },
+        { status: 400 }
+      );
+    }
+    const count = await setWatchlistNote(user.id, parsed.data.symbol, parsed.data.notes || null);
+    if (count === 0) {
+      return NextResponse.json({ success: false, error: 'Not on your watchlist' }, { status: 404 });
+    }
+    return NextResponse.json({ success: true, data: null, message: 'Note saved' });
+  } catch (error) {
+    console.error('Watchlist note failed:', error);
+    return NextResponse.json({ success: false, error: 'Could not save the note' }, { status: 500 });
   }
 }
 

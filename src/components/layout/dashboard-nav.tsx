@@ -16,12 +16,18 @@ const NAV_GROUPS = [
     label: 'Analysis',
     items: [
       { href: ROUTES.dashboard, label: 'Overview' },
+      { href: ROUTES.portfolio, label: 'Portfolio' },
       { href: ROUTES.research, label: 'Research' },
     ],
   },
   {
     label: 'Personal',
-    items: [{ href: ROUTES.watchlist, label: 'Watchlist' }],
+    items: [
+      { href: ROUTES.wallets, label: 'Wallets' },
+      { href: ROUTES.transactions, label: 'Transactions' },
+      { href: ROUTES.watchlist, label: 'Watchlist' },
+      { href: ROUTES.alerts, label: 'Alerts' },
+    ],
   },
   {
     label: 'Discover',
@@ -34,7 +40,8 @@ const NAV_GROUPS = [
 ] as const;
 
 function isActive(pathname: string, href: string) {
-  if (href === ROUTES.dashboard) return pathname === href;
+  // Parent routes whose children have their own nav entries match exactly.
+  if (href === ROUTES.dashboard || href === ROUTES.portfolio) return pathname === href;
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 

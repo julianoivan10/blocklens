@@ -19,6 +19,10 @@ export const ROUTES = {
   watchlist: '/watchlist',
   news: '/news',
   settings: '/settings',
+  portfolio: '/portfolio',
+  wallets: '/portfolio/wallets',
+  transactions: '/portfolio/transactions',
+  alerts: '/alerts',
 } as const;
 
 export const API_ROUTES = {

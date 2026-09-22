@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createResetToken } from '@/server/auth/tokens';
-import { getEmailService } from '@/services/email';
+import { sendPasswordResetEmail } from '@/services/email';
 import { forgotPasswordSchema } from '@/lib/validations';
 import type { ApiResponse } from '@/types';
 import { logServerError } from '@/server/log';
@@ -20,10 +20,12 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
     const { email } = result.data;
     const token = await createResetToken(email);
 
-    // Always return success to prevent email enumeration
+    // The response is identical whether or not the account exists, so it
+    // cannot be used to discover which emails are registered. A delivery
+    // failure is therefore not surfaced here — deliver() logs it with the
+    // provider's reason, where an operator sees it.
     if (token) {
-      const emailService = getEmailService();
-      await emailService.sendPasswordResetEmail(email, token);
+      await sendPasswordResetEmail(email, token);
     }
 
     return NextResponse.json({

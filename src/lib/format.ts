@@ -128,3 +128,19 @@ export function truncateAddress(address: string, chars = 4): string {
   if (address.length <= chars * 2 + 2) return address;
   return `${address.slice(0, chars + 2)}…${address.slice(-chars)}`;
 }
+
+/** Full-precision USD for portfolio figures: `$12,345.67`, `-$20.00`. */
+export function formatUsd(value: number, { signed = false }: { signed?: boolean } = {}): string {
+  const abs = Math.abs(value);
+  const digits = abs > 0 && abs < 1 ? 4 : 2;
+  const body = abs.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: digits });
+  const sign = value < 0 ? '-' : signed && value > 0 ? '+' : '';
+  return `${sign}$${body}`;
+}
+
+/** Token quantity with sensible precision: `1.2345`, `0.00001234`, `12,345`. */
+export function formatQuantity(value: number): string {
+  const abs = Math.abs(value);
+  const digits = abs >= 1000 ? 2 : abs >= 1 ? 4 : abs >= 0.0001 ? 6 : 10;
+  return value.toLocaleString('en-US', { maximumFractionDigits: digits });
+}

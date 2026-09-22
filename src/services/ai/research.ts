@@ -1,32 +1,27 @@
 import 'server-only';
 
-import { fetchJson, ProviderError } from '../http';
+import { z } from 'zod';
 import type { AIResearchService, ResearchContext } from './interface';
 import type { AIResearchSummary } from '@/types';
 import { AI_DISCLAIMER } from './disclaimer';
+import { GENERATION } from './config';
+import type { GeminiClient } from './gemini';
 
 /**
- * OpenAI research synthesis.
+ * Asset research synthesis on Gemini.
  *
- * Two deliberate constraints:
+ * Replaces the OpenAI adapter, which was never able to work in this
+ * deployment: the configured key was a Google key, so every call
+ * returned 401 and the Interpretation section always reported itself
+ * unavailable.
  *
- *  1. The model is given a compact digest of already-normalised
- *     BlockLens data and told to reason only from it. It is not given
- *     tools and cannot browse, so it cannot introduce a figure no
- *     provider reported.
- *  2. The response is constrained by a strict JSON schema, so a
- *     malformed answer fails loudly here instead of rendering as an
- *     empty research section.
- *
- * Temperature is not sent: the gpt-5 family rejects values other than
- * the default, and a research summary wants the default anyway.
+ * The constraints are unchanged. The model is given a compact digest of
+ * already-normalised BlockLens data, has no tools and cannot browse, and
+ * its answer must match a schema.
  */
-
-const ENDPOINT = 'https://api.openai.com/v1/chat/completions';
 
 const SUMMARY_SCHEMA = {
   type: 'object',
-  additionalProperties: false,
   required: [
     'summary',
     'keyObservations',
@@ -67,6 +62,14 @@ const SUMMARY_SCHEMA = {
   },
 } as const;
 
+const SummaryValidator = z.object({
+  summary: z.string().trim().min(40),
+  keyObservations: z.array(z.string().trim().min(1)).min(1).max(8),
+  notableRisks: z.array(z.string().trim().min(1)).max(8),
+  importantDevelopments: z.array(z.string().trim().min(1)).max(8),
+  areasForFurtherResearch: z.array(z.string().trim().min(1)).max(8),
+});
+
 const SYSTEM_PROMPT = [
   'You are a digital-asset research analyst writing for BlockLens, a research platform.',
   '',
@@ -78,21 +81,6 @@ const SYSTEM_PROMPT = [
   '- Distinguish what the data shows from what it merely suggests.',
   '- Every observation should reference a concrete figure or a named development.',
 ].join('\n');
-
-interface ChatCompletion {
-  choices: Array<{
-    message: { content: string | null; refusal?: string | null };
-    finish_reason: string;
-  }>;
-}
-
-interface SummaryPayload {
-  summary: string;
-  keyObservations: string[];
-  notableRisks: string[];
-  importantDevelopments: string[];
-  areasForFurtherResearch: string[];
-}
 
 /**
  * Compresses the dossier into the few hundred tokens that actually carry
@@ -190,80 +178,31 @@ function buildDigest(symbol: string, context: ResearchContext): string {
   return lines.join('\n');
 }
 
-export class OpenAIResearchService implements AIResearchService {
-  private readonly model: string;
-
-  constructor(
-    private readonly apiKey: string,
-    model?: string
-  ) {
-    if (!apiKey) throw new ProviderError('openai', 'an API key is required');
-    this.model = model?.trim() || 'gpt-5-mini';
-  }
+export class GeminiResearchService implements AIResearchService {
+  constructor(private readonly client: GeminiClient) {}
 
   async generateSummary(symbol: string, context: ResearchContext): Promise<AIResearchSummary> {
-    const body = {
-      model: this.model,
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        {
-          role: 'user',
-          content: `Write a research synthesis for ${symbol} from the following BlockLens data.\n\n${buildDigest(
-            symbol,
-            context
-          )}`,
-        },
-      ],
-      response_format: {
-        type: 'json_schema',
-        json_schema: { name: 'research_summary', strict: true, schema: SUMMARY_SCHEMA },
-      },
-      // The gpt-5 family uses max_completion_tokens; max_tokens is
-      // rejected. Headroom is generous because reasoning tokens count
-      // against this budget.
-      max_completion_tokens: 3000,
-    };
+    const { data } = await this.client.generateStructured({
+      system: SYSTEM_PROMPT,
+      prompt: `Write a research synthesis for ${symbol} from the following BlockLens data.
 
-    const completion = await fetchJson<ChatCompletion>(ENDPOINT, {
-      provider: 'openai',
-      revalidate: 0,
-      method: 'POST',
-      headers: { Authorization: `Bearer ${this.apiKey}` },
-      body,
-      // Synthesis is slower than a data read.
-      timeoutMs: 60_000,
+${buildDigest(
+        symbol,
+        context
+      )}`,
+      jsonSchema: SUMMARY_SCHEMA as unknown as Record<string, unknown>,
+      validator: SummaryValidator,
+      config: GENERATION.research,
     });
-
-    const choice = completion.choices?.[0];
-    if (choice?.message.refusal) {
-      throw new ProviderError('openai', `model refused: ${choice.message.refusal}`);
-    }
-    if (choice?.finish_reason === 'length') {
-      throw new ProviderError('openai', 'response truncated before completing the summary');
-    }
-
-    const content = choice?.message.content;
-    if (!content) throw new ProviderError('openai', 'empty completion');
-
-    let payload: SummaryPayload;
-    try {
-      payload = JSON.parse(content) as SummaryPayload;
-    } catch {
-      throw new ProviderError('openai', 'completion was not valid JSON');
-    }
-
-    if (!payload.summary?.trim()) {
-      throw new ProviderError('openai', 'completion contained no summary');
-    }
 
     return {
       symbol: symbol.toUpperCase(),
       generatedAt: new Date().toISOString(),
-      summary: payload.summary.trim(),
-      keyObservations: payload.keyObservations ?? [],
-      notableRisks: payload.notableRisks ?? [],
-      importantDevelopments: payload.importantDevelopments ?? [],
-      areasForFurtherResearch: payload.areasForFurtherResearch ?? [],
+      summary: data.summary,
+      keyObservations: data.keyObservations,
+      notableRisks: data.notableRisks,
+      importantDevelopments: data.importantDevelopments,
+      areasForFurtherResearch: data.areasForFurtherResearch,
       disclaimer: AI_DISCLAIMER,
       isDemo: false,
     };

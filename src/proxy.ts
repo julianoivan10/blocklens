@@ -12,7 +12,7 @@ import { jwtVerify } from 'jose';
 import { AUTH_COOKIE_NAME, ROUTES } from '@/lib/constants';
 import { getAuthSecret } from '@/server/auth/secret';
 
-const protectedPaths = ['/dashboard', '/research', '/watchlist', '/news', '/settings'];
+const protectedPaths = ['/dashboard', '/research', '/watchlist', '/news', '/settings', '/portfolio', '/alerts'];
 const authPaths = ['/login', '/register', '/forgot-password', '/reset-password'];
 
 export async function proxy(request: NextRequest) {
@@ -51,6 +51,8 @@ export const config = {
     '/watchlist/:path*',
     '/news/:path*',
     '/settings/:path*',
+    '/portfolio/:path*',
+    '/alerts/:path*',
     '/login',
     '/register',
     '/forgot-password',

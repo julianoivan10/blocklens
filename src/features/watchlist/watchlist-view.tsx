@@ -10,6 +10,7 @@ import { ROUTES } from '@/lib/constants';
 import { formatCompactCurrency, formatDate, formatPrice } from '@/lib/format';
 import { useWatchlist } from '@/hooks/use-watchlist';
 import type { WatchlistItemWithData } from '@/types';
+import { NoteCell } from './note-cell';
 
 /**
  * The watchlist as a ruled ledger.
@@ -52,7 +53,7 @@ export function WatchlistView({ items }: { items: WatchlistItemWithData[] }) {
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[46rem] border-collapse">
+      <table className="w-full min-w-[56rem] border-collapse">
         <thead>
           <tr className="border-b border-line">
             <th scope="col" className="t-micro py-3 pr-4 text-left font-medium">
@@ -66,6 +67,9 @@ export function WatchlistView({ items }: { items: WatchlistItemWithData[] }) {
             </th>
             <th scope="col" className="t-micro py-3 px-4 text-right font-medium">
               Market cap
+            </th>
+            <th scope="col" className="t-micro py-3 px-4 text-left font-medium">
+              Notes
             </th>
             <th scope="col" className="t-micro py-3 px-4 text-right font-medium">
               Added
@@ -108,6 +112,10 @@ export function WatchlistView({ items }: { items: WatchlistItemWithData[] }) {
 
               <td className="t-figure px-4 py-4 text-right text-[0.8125rem] text-ink-dim">
                 {item.marketCap !== undefined ? formatCompactCurrency(item.marketCap) : '—'}
+              </td>
+
+              <td className="px-4 py-4">
+                <NoteCell symbol={item.symbol} initial={item.notes} />
               </td>
 
               <td className="t-micro-tight px-4 py-4 text-right text-ink-ghost">

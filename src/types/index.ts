@@ -291,6 +291,7 @@ export interface WatchlistItemWithData {
   symbol: string;
   name: string;
   addedAt: Date;
+  notes?: string | null;
   currentPrice?: number;
   priceChangePercentage24h?: number;
   marketCap?: number;

@@ -1,10 +1,19 @@
 import { z } from 'zod';
 import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from './constants';
 
+/**
+ * Emails are trimmed and lower-cased before validation, so the address a
+ * person registers with and the one a phone keyboard auto-capitalises at
+ * sign-in resolve to the same row. `users.email` is a case-sensitive
+ * unique index, so without this `Ana@x.com` could never sign in to the
+ * account created as `ana@x.com`.
+ */
 export const emailSchema = z
   .string()
-  .email('Please enter a valid email address')
-  .min(1, 'Email is required');
+  .trim()
+  .toLowerCase()
+  .min(1, 'Email is required')
+  .email('Please enter a valid email address');
 
 export const passwordSchema = z
   .string()

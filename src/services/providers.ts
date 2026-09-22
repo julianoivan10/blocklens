@@ -5,9 +5,11 @@ import 'server-only';
  *
  * The rule is live-first. CoinGecko, DeFiLlama and RSS all serve real
  * data without a key, so those domains are live out of the box and a key
- * only raises their rate limits. Alchemy, GNews and OpenAI genuinely
+ * only raises their rate limits. Alchemy, GNews and Gemini genuinely
  * require a key; without one, the feature reports itself unavailable
  * rather than falling back to invented figures.
+ *
+ * Gemini configuration lives in `services/ai/config.ts`, not here.
  *
  * Sample data still exists and is still useful — for offline work and
  * for tests — but it is opt-in, never a silent substitute for a failed
@@ -29,11 +31,5 @@ export const providerKeys = {
   },
   get gnews() {
     return process.env.NEWS_API_KEY?.trim() || undefined;
-  },
-  get openai() {
-    return process.env.AI_API_KEY?.trim() || undefined;
-  },
-  get openaiModel() {
-    return process.env.AI_MODEL?.trim() || 'gpt-5-mini';
   },
 } as const;

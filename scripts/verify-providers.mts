@@ -47,7 +47,9 @@ async function main() {
   const { AlchemyChainService } = await import('../src/services/onchain/alchemy.js');
   const { RssNewsProvider } = await import('../src/services/news/rss.js');
   const { GNewsProvider } = await import('../src/services/news/gnews.js');
-  const { OpenAIResearchService } = await import('../src/services/ai/openai.js');
+  const { GeminiResearchService } = await import('../src/services/ai/research.js');
+  const { GeminiClient } = await import('../src/services/ai/gemini.js');
+  const { DEFAULT_GEMINI_MODEL } = await import('../src/services/ai/config.js');
 
   const cg = new CoinGeckoMarketService(process.env.MARKET_DATA_API_KEY);
 
@@ -313,18 +315,18 @@ async function main() {
     });
   }
 
-  console.log('\nOpenAI — research synthesis');
-  if (!process.env.AI_API_KEY) {
-    skip('OpenAIResearchService', 'AI_API_KEY not set — adapter not exercised');
+  console.log('\nGemini — research synthesis');
+  if (!process.env.GEMINI_API_KEY) {
+    skip('GeminiResearchService', 'GEMINI_API_KEY not set — adapter not exercised');
   } else {
-    const model = process.env.AI_MODEL || 'gpt-5-mini';
+    const model = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
     await check(`generateSummary("BTC") via ${model}`, async () => {
       const token = await cg.getTokenOverview('BTC');
       if (!token) throw new Error('no token to summarise');
       const onchain = await llama.getChainMetrics('BTC').catch(() => null);
       const news = await new RssNewsProvider().fetchAll(6).catch(() => []);
 
-      const svc = new OpenAIResearchService(process.env.AI_API_KEY!, model);
+      const svc = new GeminiResearchService(new GeminiClient(process.env.GEMINI_API_KEY!, model));
       const s = await svc.generateSummary('BTC', { token, onchain, news });
 
       if (s.summary.length < 80) throw new Error(`summary suspiciously short (${s.summary.length} chars)`);

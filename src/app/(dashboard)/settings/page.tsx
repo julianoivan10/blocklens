@@ -1,14 +1,14 @@
-import { redirect } from 'next/navigation';
 import { Container } from '@/components/ui/section';
 import { Block, BlockHead } from '@/components/ui/block';
 import { Register, RegisterRow } from '@/components/data/register';
 import { Badge } from '@/components/ui/badge';
 import { ROUTES } from '@/lib/constants';
 import { formatDate } from '@/lib/format';
-import { verifySession } from '@/server/auth/session';
+import { requireUser } from '@/server/auth/session';
 import { prisma } from '@/server/db';
 import { DeleteAccountControl } from '@/features/settings/delete-account-control';
 import { SessionControl } from '@/features/settings/session-control';
+import { VerifyEmailControl } from '@/features/settings/verify-email-control';
 
 export const metadata = { title: 'Settings' };
 
@@ -29,8 +29,7 @@ export const metadata = { title: 'Settings' };
  * interactive.
  */
 export default async function SettingsPage() {
-  const session = await verifySession();
-  if (!session) redirect(ROUTES.login);
+  const session = await requireUser(ROUTES.settings);
 
   const [profile, sessionCount] = await Promise.all([
     prisma.user.findUnique({
@@ -71,6 +70,11 @@ export default async function SettingsPage() {
                 value={profile?.createdAt ? formatDate(profile.createdAt) : '—'}
               />
             </Register>
+            {!profile?.emailVerified && (
+              <div className="mt-4">
+                <VerifyEmailControl />
+              </div>
+            )}
           </Block>
 
           <Block className="mt-14">
