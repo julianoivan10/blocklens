@@ -118,6 +118,43 @@ FACT or AI INTERPRETATION. Output is cached by input hash.
 
 ---
 
+## Performance & caching
+
+Measured with `scripts/perf.mts` (seeds empty, small and large accounts through
+the API and times every page). Two findings shaped the design:
+
+- **Database round trips dominated every page.** Prisma's engine with
+  `?pgbouncer=true` wraps each query in BEGIN / DEALLOCATE ALL / query / COMMIT,
+  and `connection_limit=1` serialised every `Promise.all`. The client now uses
+  the `pg` driver adapter (`src/server/db`): one round trip per query, a pool of
+  five, still over the transaction pooler.
+- **Alchemy's free plan allows 300 token-price requests per hour** for the whole
+  app, and bursts draw 429s. Every Prices request goes through one serial queue,
+  and a quota 429 opens a breaker for ten minutes instead of retrying.
+
+| What | Where | Key | Fresh for | After that | Scope |
+|---|---|---|---|---|---|
+| Current quote (ticker) | `market_quotes` | asset key | 60s | served ≤1h old while refreshing after the response; older refetched inline | global (public data) |
+| Current quote (token contract) | `market_quotes` | asset key | 5 min | same | global |
+| "No price" answer | `market_quotes` (price null) | asset key | 24h | refreshed in the background | global |
+| Daily close | `price_daily` | asset + UTC day | forever (a closed day never changes) | — | global |
+| Ranges already asked for | `price_coverage` | asset | — | today's edge re-asked at most hourly; the daily cron extends every history | global |
+| Ledger snapshot (pools) | Next data cache | user + ledger version | until a transaction changes | recomputed | per user |
+| Value timeline | Next data cache | user + ledger version + day | 1h | recomputed | per user |
+| AI insight | `ai_insights` | user + hash of the facts | until the facts change | regenerated on request | per user |
+| Session, ledger, watchlist | React `cache()` | request | one request | — | per request |
+
+Private data is never cached under a key that lacks the user id. Cached market
+data never replaces the ledger: quantities, cost basis and PnL are always
+derived from stored transactions.
+
+The portfolio page streams in three sections — holdings, performance & risk,
+AI insights — so a slow history fetch never holds back the holdings. A first
+quote that takes longer than 2.5s keeps loading in the background and the
+page says the total excludes it, rather than showing a guessed price.
+
+---
+
 ## Architecture
 
 ```
@@ -250,6 +287,7 @@ npm run typecheck         # tsc --noEmit
 npm run verify:providers  # exercise every adapter against its real API
 npm run verify:auth       # auth preflight against the configured database
 npm test                  # unit tests (engine, classification, risk, alerts, AI, providers — mocked)
+npm run test:integration  # market-data cache against the real database, providers mocked
 npm run test:e2e          # end-to-end against a running server (BASE_URL), real providers
 ```
 

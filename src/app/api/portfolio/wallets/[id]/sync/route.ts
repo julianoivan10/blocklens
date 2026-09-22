@@ -34,7 +34,10 @@ export const POST = authed<Ctx>('portfolio:wallets:sync', async (user, _request,
 
   const result = await syncWallet(user.id, wallet.id);
   if (result.status === 'ERROR') {
-    return fail('The chain provider did not respond. Try again shortly.', 502);
+    return fail(
+      result.error?.includes('hourly request limit') ? result.error : 'The chain provider did not respond. Try again shortly.',
+      result.error?.includes('hourly request limit') ? 503 : 502
+    );
   }
   return ok(result, result.complete ? 'Wallet is up to date' : 'Imported part of the history; continuing');
 });

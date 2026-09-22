@@ -340,3 +340,52 @@ model AiInsight {
   @@index([userId, kind, createdAt])
   @@map("ai_insights")
 }
+
+// ============================================================
+// Market-data cache
+//
+// Public market data only — never anything user-specific — so one row
+// serves every user. The provider stays the source of truth; these rows
+// only spare repeat calls. A closed day's price never changes, so a
+// stored close is never fetched again.
+// ============================================================
+
+/// Latest quote per asset. `price` null = the provider has no price for it
+/// (cached briefly as well, so spam tokens are not re-asked every view).
+model MarketQuote {
+  assetKey     String   @id
+  price        Decimal? @db.Decimal(38, 12)
+  change24hPct Float?
+  marketCap    Float?
+  volume24h    Float?
+  name         String?
+  source       String
+  /// When the provider says the price was last updated.
+  asOf         DateTime
+  /// When BlockLens last asked the provider.
+  fetchedAt    DateTime
+
+  @@map("market_quotes")
+}
+
+/// One daily close. The day is the UTC date of the provider's 00:00 point.
+model PriceDaily {
+  assetKey String
+  day      DateTime @db.Date
+  close    Decimal  @db.Decimal(38, 12)
+  source   String
+
+  @@id([assetKey, day])
+  @@map("price_daily")
+}
+
+/// Which days have been requested for an asset, including ranges where
+/// the provider had nothing, so an unpriced asset is not asked again.
+model PriceCoverage {
+  assetKey  String   @id
+  fromDay   DateTime @db.Date
+  toDay     DateTime @db.Date
+  checkedAt DateTime
+
+  @@map("price_coverage")
+}

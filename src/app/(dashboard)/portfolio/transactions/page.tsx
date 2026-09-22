@@ -37,7 +37,14 @@ export default async function TransactionsPage({
       orderBy: [{ timestamp: 'desc' }, { id: 'desc' }],
       skip: (page - 1) * PAGE,
       take: PAGE,
-      include: { wallet: { select: { label: true } } },
+      // Only what the table renders — not metadata, contract or asset names.
+      select: {
+        id: true, timestamp: true, hash: true, chain: true, type: true, source: true, status: true,
+        isInternal: true, needsReview: true, reviewReason: true, userOverride: true,
+        symbol: true, direction: true, amount: true, usdValue: true, priceSource: true,
+        fromAddress: true, toAddress: true,
+        wallet: { select: { label: true } },
+      },
     }),
     prisma.transaction.count({ where }),
     prisma.transaction.count({ where: { userId: user.id, needsReview: true } }),

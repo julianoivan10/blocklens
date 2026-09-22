@@ -190,8 +190,13 @@ async function main() {
     assert(dup.status === 409, `duplicate → ${dup.status}`);
   });
 
-  await step('sync imports real history (one bounded slice)', async () => {
-    const r = await a.req(`/api/portfolio/wallets/${walletId}/sync`, { method: 'POST' });
+  await step('sync imports real history (bounded slices, as the UI calls them)', async () => {
+    // A slice may end with pricing still in progress and nothing written;
+    // the UI calls again, and so does this test.
+    let r = await a.req(`/api/portfolio/wallets/${walletId}/sync`, { method: 'POST' });
+    for (let i = 0; i < 5 && r.status === 200 && r.body.data.imported === 0 && !r.body.data.complete; i++) {
+      r = await a.req(`/api/portfolio/wallets/${walletId}/sync`, { method: 'POST' });
+    }
     assert(r.status === 200, JSON.stringify(r.body));
     const tx = await a.req('/api/portfolio/transactions?take=200');
     assert(tx.body.data.items.length > 0, 'no transactions imported');

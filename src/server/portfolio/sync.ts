@@ -1,9 +1,10 @@
 import 'server-only';
 
+import { after } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/server/db';
 import { getChainProvider } from '@/services/chains';
-import { getCurrentPrices, getDailyHistories } from '@/services/pricing';
+import { alchemyPricesAvailable, getCurrentPrices, getDailyHistories } from '@/services/pricing';
 import { classifyTransaction, type NormalizedLeg } from '@/lib/portfolio/normalize';
 import { CHAINS, nativeAssetKey, type ChainId } from '@/lib/portfolio/chains';
 import { DAY_MS, priceAt } from '@/lib/portfolio/timeline';
@@ -21,6 +22,18 @@ import { logServerError } from '@/server/log';
 // Sized so one slice stays well inside a 60s serverless limit: a full EVM
 // page is up to 1,000 transfers per direction, plus receipts and prices.
 const BUDGET: Record<'evm' | 'solana', number> = { evm: 1, solana: 100 };
+
+/**
+ * Time allowed for pricing a slice, counted from the start of the sync.
+ * Historical prices for a years-long slice can take longer than one
+ * function may run (one serial Alchemy call per token per 365 days). When
+ * the budget runs out the slice is not written — nothing is stored
+ * unvalued — but every history fetched so far is kept, so the next call
+ * resumes the pricing where this one stopped and the import converges.
+ */
+const PRICING_DEADLINE_MS = 40_000;
+
+class PricingIncomplete extends Error {}
 
 export interface SyncResult {
   imported: number;
@@ -78,6 +91,7 @@ export async function syncWallet(userId: string, walletId: string): Promise<Sync
 
   await prisma.wallet.update({ where: { id: wallet.id }, data: { syncStatus: 'SYNCING', syncError: null } });
 
+  const started = Date.now();
   const timing: Record<string, number> = {};
   let mark = Date.now();
   const lap = (name: string) => {
@@ -103,13 +117,39 @@ export async function syncWallet(userId: string, walletId: string): Promise<Sync
       // histories would only burn the provider's rate limit.
       const current = await getCurrentPrices([...keys]);
       const priced = [...keys].filter((k) => current.has(k));
-      const histories = await getDailyHistories(priced, Math.min(...times) - 2 * DAY_MS, Math.max(...times));
+      // Only the slice's own date range: it keeps each slice well inside the
+      // function time limit. Stored closes are shared with the portfolio
+      // charts, which fill any remaining days themselves.
+      const remaining = PRICING_DEADLINE_MS - (Date.now() - started);
+      const historyFetch = getDailyHistories(priced, Math.min(...times) - 2 * DAY_MS, Math.max(...times));
+      const histories = await Promise.race([
+        historyFetch,
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), Math.max(0, remaining))),
+      ]);
+      if (!histories) {
+        // The fetch keeps running and storing what it gets; this slice is
+        // simply priced on the next call.
+        const settle = () => historyFetch.then(() => undefined, () => undefined);
+        try {
+          after(settle);
+        } catch {
+          void settle();
+        }
+        throw new PricingIncomplete();
+      }
       const lookup = (assetKey: string, ts: number) => {
         const p = priceAt(histories.get(assetKey), ts);
         return p !== null
           ? { price: p, source: assetKey.startsWith('sym:') ? 'daily close (CoinGecko/Alchemy)' : 'daily close (Alchemy Prices)' }
           : null;
       };
+      // Legs are written once and never revalued, so a slice priced while
+      // the token-price provider is out of quota would store tokens with no
+      // USD value for good. Stop before writing instead; the cursor has not
+      // moved, so the same slice is imported on the next attempt.
+      if (!alchemyPricesAvailable() && [...keys].some((k) => !k.startsWith('sym:'))) {
+        throw new Error('The token price provider has reached its hourly request limit. Sync again later — nothing was lost.');
+      }
       const own = await ownAddresses(userId);
       legs = page.transactions.flatMap((tx) => classifyTransaction(tx, own, lookup));
     }
@@ -177,6 +217,11 @@ export async function syncWallet(userId: string, walletId: string): Promise<Sync
     );
     return { imported, complete: page.complete, status };
   } catch (error) {
+    if (error instanceof PricingIncomplete) {
+      await prisma.wallet.update({ where: { id: wallet.id }, data: { syncStatus: 'PARTIAL', syncError: null } });
+      console.log(`[portfolio:sync] chain=${wallet.chain} pricing continues next call ms=${JSON.stringify(timing)}`);
+      return { imported: 0, complete: false, status: 'PARTIAL' };
+    }
     logServerError('portfolio:sync', error);
     const message = error instanceof Error ? error.message.replace(/https?:\/\/\S+/g, '[url]').slice(0, 300) : 'sync failed';
     await prisma.wallet.update({

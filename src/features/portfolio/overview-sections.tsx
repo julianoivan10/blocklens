@@ -90,6 +90,11 @@ export function DataNotices({ overview }: { overview: PortfolioOverview }) {
   if (t.unpricedPositions) {
     notes.push(`${t.unpricedPositions} ${t.unpricedPositions === 1 ? 'position has' : 'positions have'} no current market price and ${t.unpricedPositions === 1 ? 'is' : 'are'} excluded from the total.`);
   }
+  if (overview.pendingQuotes) {
+    notes.push(
+      `Prices for ${overview.pendingQuotes} ${overview.pendingQuotes === 1 ? 'asset' : 'assets'} could not be fetched yet, so the total above excludes them for now. They are retried automatically.`
+    );
+  }
   if (overview.staleQuotes) {
     notes.push(`${overview.staleQuotes} ${overview.staleQuotes === 1 ? 'price is' : 'prices are'} more than an hour old.`);
   }
@@ -114,7 +119,50 @@ export function DataNotices({ overview }: { overview: PortfolioOverview }) {
   );
 }
 
+/**
+ * A position with nothing to show beyond its quantity: no current price,
+ * no known cost, nothing realized. In practice these are airdropped
+ * tokens, and a wallet can hold hundreds.
+ */
+function isQuantityOnly(p: Position): boolean {
+  return p.currentPrice === null && p.investedCapital === 0 && p.realizedPnl === 0;
+}
+
 export function PositionsTable({ positions }: { positions: Position[] }) {
+  // Quantity-only holdings are listed compactly below the table rather
+  // than as full rows of dashes — the same data, a fraction of the markup
+  // (they were ~90% of the page for a spam-heavy wallet).
+  const full = positions.filter((p) => !isQuantityOnly(p));
+  const quantityOnly = positions.filter(isQuantityOnly);
+  return (
+    <>
+      <PositionsGrid positions={full} />
+      {quantityOnly.length > 0 && (
+        <details className="mt-4 text-[0.8125rem]" data-testid="unpriced-holdings">
+          <summary className="t-micro-tight cursor-pointer select-none text-ink-faint hover:text-ink">
+            {quantityOnly.length} {quantityOnly.length === 1 ? 'holding' : 'holdings'} without a market price or known cost
+          </summary>
+          <p className="mt-2 max-w-[44rem] text-[0.75rem] text-ink-ghost">
+            No provider prices these tokens, so they are excluded from value, allocation and PnL. Unsolicited airdrops are
+            common among them.
+          </p>
+          <ul className="mt-3 grid grid-cols-1 gap-x-8 gap-y-1 font-mono text-[0.75rem] text-ink-faint sm:grid-cols-2 lg:grid-cols-3">
+            {quantityOnly.map((p) => (
+              <li key={p.assetKey} className="flex justify-between gap-3 border-b border-line-faint py-1" title={p.name ?? p.symbol}>
+                <span className="truncate">
+                  {p.symbol} <span className="text-ink-ghost">{p.chains.map((c) => chainLabel(c.chain)).join(' · ')}</span>
+                </span>
+                <span className="tabular-nums">{formatQuantity(p.quantity)}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </>
+  );
+}
+
+function PositionsGrid({ positions }: { positions: Position[] }) {
   return (
     <Block>
       <BlockHead label="Positions" aside={<span className="t-micro-tight text-ink-ghost">Weighted-average cost</span>} />

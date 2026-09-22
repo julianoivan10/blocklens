@@ -45,8 +45,11 @@ export async function evaluateAlertsForUser(userId: string): Promise<{ evaluated
       : [],
   ]);
 
+  // A portfolio with prices still loading has a skewed allocation and value;
+  // portfolio-level alerts then report no data rather than a false reading.
+  const portfolioComplete = !overview || overview.pendingQuotes === 0;
   const allocation = new Map<string, number>();
-  for (const p of overview?.positions ?? []) {
+  for (const p of portfolioComplete ? (overview?.positions ?? []) : []) {
     if (p.allocationPct !== null) allocation.set(p.symbol.toUpperCase(), (allocation.get(p.symbol.toUpperCase()) ?? 0) + p.allocationPct);
   }
 
@@ -56,7 +59,7 @@ export async function evaluateAlertsForUser(userId: string): Promise<{ evaluated
       [...(quotes ?? new Map()).entries()].map(([k, q]) => [k.slice(4), { price: q.price, change24hPct: q.change24hPct }])
     ),
     allocationBySymbol: allocation,
-    currentDrawdownPct: performance?.currentDrawdownPct ?? null,
+    currentDrawdownPct: portfolioComplete ? (performance?.currentDrawdownPct ?? null) : null,
     newTransactions: newTx.map((t) => ({
       id: t.id,
       walletId: t.walletId,

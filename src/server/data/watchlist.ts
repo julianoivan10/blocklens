@@ -1,7 +1,9 @@
 import 'server-only';
 
+import { cache } from 'react';
 import { prisma } from '@/server/db';
 import { getTokenSnapshot } from './market';
+import { getCurrentPrices } from '@/services/pricing';
 import type { WatchlistItemWithData, WatchlistWithItems } from '@/types';
 
 /**
@@ -23,8 +25,13 @@ async function getOrCreateDefaultWatchlist(userId: string) {
   return prisma.watchlist.create({ data: { userId, name: 'Default' } });
 }
 
-/** The user's watchlist, enriched with a current market reading. */
-export async function getWatchlist(userId: string): Promise<WatchlistWithItems> {
+/**
+ * The user's watchlist, enriched with a current market reading.
+ * Memoised per request (the overview panel and the page may both ask).
+ */
+export const getWatchlist = cache(readWatchlist);
+
+async function readWatchlist(userId: string): Promise<WatchlistWithItems> {
   const watchlist = await getOrCreateDefaultWatchlist(userId);
 
   const items = await prisma.watchlistItem.findMany({
@@ -32,12 +39,16 @@ export async function getWatchlist(userId: string): Promise<WatchlistWithItems> 
     orderBy: { addedAt: 'desc' },
   });
 
-  // One market read per held asset, concurrently. A missing snapshot
-  // leaves the row intact without its figures rather than failing the
-  // whole list.
+  // One batched quote read for every row (shared market-data cache).
+  // The batch only accepts exact, ranked tickers; anything it cannot
+  // resolve — an unranked token added from search — falls back to the
+  // per-asset lookup it always used. A missing reading leaves the row
+  // intact without its figures rather than failing the whole list.
+  const quotes = await getCurrentPrices(items.map((i) => `sym:${i.symbol}`)).catch(() => new Map());
   const enriched: WatchlistItemWithData[] = await Promise.all(
     items.map(async (item) => {
-      const snapshot = await getTokenSnapshot(item.symbol).catch(() => null);
+      const quote = quotes.get(`sym:${item.symbol}`);
+      const snapshot = quote ? null : await getTokenSnapshot(item.symbol).catch(() => null);
       return {
         id: item.id,
         symbol: item.symbol,
@@ -45,9 +56,9 @@ export async function getWatchlist(userId: string): Promise<WatchlistWithItems> 
         addedAt: item.addedAt,
         notes: item.notes,
         // A provider row without a price arrives as 0; show it as missing.
-        currentPrice: snapshot?.currentPrice ? snapshot.currentPrice : undefined,
-        priceChangePercentage24h: snapshot?.priceChangePercentage24h,
-        marketCap: snapshot?.marketCap,
+        currentPrice: quote?.price ?? (snapshot?.currentPrice ? snapshot.currentPrice : undefined),
+        priceChangePercentage24h: quote ? (quote.change24hPct ?? undefined) : snapshot?.priceChangePercentage24h,
+        marketCap: quote ? (quote.marketCap ?? undefined) : snapshot?.marketCap,
       };
     })
   );

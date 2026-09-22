@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { cache } from 'react';
 import { prisma } from '@/server/db';
 import type { LedgerLeg } from '@/lib/portfolio/types';
 
@@ -8,7 +9,10 @@ import type { LedgerLeg } from '@/lib/portfolio/types';
  * converted to numbers exactly once, here.
  */
 
-export async function loadLedger(userId: string): Promise<LedgerLeg[]> {
+/** Memoised per request: a cold portfolio load derives both the snapshot and the timeline from it. */
+export const loadLedger = cache(readLedger);
+
+async function readLedger(userId: string): Promise<LedgerLeg[]> {
   const rows = await prisma.transaction.findMany({
     where: { userId },
     select: {

@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { cache } from 'react';
 import { SignJWT, jwtVerify } from 'jose';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
@@ -41,7 +42,14 @@ export async function createSession(userId: string): Promise<string> {
   return jwt;
 }
 
-export async function verifySession(): Promise<SessionUser | null> {
+/**
+ * The signed-in user, or null. Memoised per request: the layout, the page
+ * and several panels all ask, and each ask used to be two database round
+ * trips.
+ */
+export const verifySession = cache(readSession);
+
+async function readSession(): Promise<SessionUser | null> {
   const cookieStore = await cookies();
   const jwt = cookieStore.get(AUTH_COOKIE_NAME)?.value;
   if (!jwt) return null;
@@ -74,29 +82,24 @@ export async function verifySession(): Promise<SessionUser | null> {
 
   if (!sessionId || !token) return null;
 
-  const session = await prisma.session.findUnique({
-    where: { id: sessionId, token },
-    include: {
-      user: { select: { id: true, email: true, name: true, emailVerified: true, image: true } },
-    },
+  // One round trip: the user whose live session matches both the id and
+  // the token. Expiry is part of the predicate, so an expired session reads
+  // exactly like a missing one.
+  const user = await prisma.user.findFirst({
+    where: { sessions: { some: { id: sessionId, token, expiresAt: { gt: new Date() } } } },
+    select: { id: true, email: true, name: true },
   });
 
-  if (!session || session.expiresAt < new Date()) {
-    if (session) {
-      // Best effort: failing to reap an expired row must not stop us
-      // reporting that the caller is signed out.
-      await prisma.session.delete({ where: { id: session.id } }).catch((error) => {
-        logServerError('auth:session-reap', error);
-      });
-    }
+  if (!user) {
+    // Best effort, off the hot path: reap the row if it merely expired.
+    // Failing to reap must not stop us reporting the caller signed out.
+    await prisma.session
+      .deleteMany({ where: { id: sessionId, expiresAt: { lte: new Date() } } })
+      .catch((error) => logServerError('auth:session-reap', error));
     return null;
   }
 
-  return {
-    id: session.user.id,
-    email: session.user.email,
-    name: session.user.name,
-  };
+  return { id: user.id, email: user.email, name: user.name };
 }
 
 /**

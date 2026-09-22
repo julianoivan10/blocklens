@@ -192,11 +192,15 @@ export async function generateInsight(userId: string, periodId: PeriodId): Promi
   const client = getGeminiClient();
   if (!client) return { status: 'unconfigured', message: 'AI insights are not configured on this deployment.' };
 
-  const { facts, periodLabel } = await buildFacts(userId, periodId);
   const overview = await getPortfolioOverview(userId);
   if (overview.legCount === 0) {
     return { status: 'empty', message: 'Add a wallet or a transaction first — there is nothing to analyse yet.' };
   }
+  // Facts must describe the whole portfolio, not one with prices missing.
+  if (overview.pendingQuotes > 0) {
+    return { status: 'rate_limited', message: 'Some prices are still loading. Try again in a moment.' };
+  }
+  const { facts, periodLabel } = await buildFacts(userId, periodId);
 
   const inputHash = hashFacts(facts);
   const existing = await prisma.aiInsight.findFirst({

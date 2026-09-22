@@ -24,7 +24,14 @@ import {
 } from '@/lib/portfolio/risk';
 import type { ChainId } from '@/lib/portfolio/chains';
 import type { PoolState, PositionFlag } from '@/lib/portfolio/types';
-import { getCurrentPrices, getDailyHistories, type PriceQuote } from '@/services/pricing';
+import { getCurrentPrices, getCurrentPricesWithin, getDailyHistories, type PriceQuote } from '@/services/pricing';
+
+/**
+ * How long the holdings may wait for quotes nobody has fetched before.
+ * Anything slower keeps loading in the background and is reported on the
+ * page as pending, never priced at a guess.
+ */
+const FIRST_QUOTE_BUDGET_MS = 2_500;
 
 /**
  * Portfolio reads.
@@ -123,6 +130,8 @@ export interface PortfolioOverview extends ValuationResult {
   reviewCount: number;
   reconciliation: Reconciliation[];
   staleQuotes: number;
+  /** Held assets whose first quote is still being fetched. */
+  pendingQuotes: number;
   wallets: number;
 }
 
@@ -131,8 +140,8 @@ export const getPortfolioOverview = cache(async (userId: string): Promise<Portfo
   const pools = rehydrate(snapshot);
   const held = [...pools.values()].filter((p) => p.quantity > 0).map((p) => p.assetKey);
 
-  const [prices, reviewCount, wallets, balances] = await Promise.all([
-    getCurrentPrices(held),
+  const [{ quotes: prices, pending }, reviewCount, wallets, balances] = await Promise.all([
+    getCurrentPricesWithin(held, FIRST_QUOTE_BUDGET_MS),
     prisma.transaction.count({ where: { userId, needsReview: true } }),
     prisma.wallet.findMany({ where: { userId }, select: { id: true, label: true, chain: true } }),
     prisma.walletBalance.findMany({ where: { wallet: { userId } } }),
@@ -181,6 +190,7 @@ export const getPortfolioOverview = cache(async (userId: string): Promise<Portfo
     reviewCount,
     reconciliation,
     staleQuotes: [...prices.values()].filter((q) => q.stale).length,
+    pendingQuotes: pending.length,
     wallets: wallets.length,
   };
 });

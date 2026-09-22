@@ -12,11 +12,13 @@
     "verify:auth": "node --conditions=react-server --import tsx scripts/verify-auth.mts",
     "db:inspect": "node --conditions=react-server --import tsx scripts/db-inspect.mts",
     "test": "node --conditions=react-server --import tsx --test \"tests/unit/*.test.ts\"",
-    "test:e2e": "node --import tsx scripts/e2e.mts"
+    "test:e2e": "node --import tsx scripts/e2e.mts",
+    "test:integration": "node --env-file=.env --conditions=react-server --import tsx --test --test-concurrency=1 \"tests/integration/*.test.ts\""
   },
   "dependencies": {
     "@google/genai": "^2.24.0",
     "@hookform/resolvers": "^5.9.1",
+    "@prisma/adapter-pg": "^6.19.3",
     "@prisma/client": "^6.19.0",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.116.0",

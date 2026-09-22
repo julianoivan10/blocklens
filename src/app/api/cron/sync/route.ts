@@ -4,11 +4,13 @@ import { prisma } from '@/server/db';
 import { syncWallet } from '@/server/portfolio/sync';
 import { evaluateAllAlerts } from '@/server/alerts';
 import { chainProvidersConfigured } from '@/services/chains';
+import { extendStoredHistories } from '@/services/pricing';
 import { logServerError } from '@/server/log';
 
 /**
  * Scheduled background work (see vercel.json): evaluate every enabled
- * alert, then refresh the least recently synced wallets.
+ * alert, extend stored price history to today, then refresh the least
+ * recently synced wallets.
  *
  * Vercel Cron sends `Authorization: Bearer $CRON_SECRET`. Without the
  * secret configured the route refuses to run at all, rather than being
@@ -40,6 +42,13 @@ export async function GET(request: NextRequest) {
   // backlog drains across runs instead of starving alerts.
   const alerts = await evaluateAllAlerts(deadline - 25_000);
 
+  // Then bring stored price history up to today, so the day's first
+  // portfolio view does not have to fetch it.
+  const history = await extendStoredHistories(Date.now() + 10_000).catch((error) => {
+    logServerError('cron:history', error);
+    return null;
+  });
+
   if (chainProvidersConfigured()) {
     const wallets = await prisma.wallet.findMany({
       where: { syncStatus: { not: 'SYNCING' } },
@@ -58,5 +67,5 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ success: true, data: { synced: synced.length, alerts } });
+  return NextResponse.json({ success: true, data: { synced: synced.length, alerts, history } });
 }
